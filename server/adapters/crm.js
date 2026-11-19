@@ -1,87 +1,65 @@
 'use strict';
 /**
- * crm adapter — interface:
- *   upsertContact({ email, name })          → { id }
- *   createDeal({ name, amount, stage, contactId, ref }) → { id }
- *   updateDealStage(dealId, stage)          → { id, stage }
- * Live implementation targets the HubSpot v3 CRM API with a private app token.
+ * CRM adapter interface:
+ *   createContactAndDeal({ customer, order }) -> { contactId, dealId }
+ *   updateDealStage({ dealId, stage })        -> void     (stage: 'quote_locked' | 'deposit_paid')
  */
-const crypto = require('crypto');
-const { AppError } = require('../errors');
-const logger = require('../logger');
+const config = require('../config');
+const { request, shouldMockFail } = require('./http');
 
-class MockCrm {
-  constructor() {
-    this.mode = 'mock';
-  }
+let seq = 1;
+const mockStore = { contacts: [], deals: [] };
 
-  async upsertContact({ email }) {
-    const id = `crm_mock_ct_${crypto.randomBytes(5).toString('hex')}`;
-    logger.info('crm.mock.upsertContact', { id, email });
-    return { id };
-  }
+const mock = {
+  mode: 'mock',
+  store: mockStore,
+  async createContactAndDeal({ customer, order }) {
+    if (shouldMockFail()) throw new Error('Mock CRM random failure');
+    const contactId = `mock-contact-${seq}`; const dealId = `mock-deal-${seq++}`;
+    mockStore.contacts.push({ id: contactId, email: customer.email });
+    mockStore.deals.push({ id: dealId, contactId, ref: order.ref, amountCents: order.quote.totalCents, stage: 'quote_locked' });
+    return { contactId, dealId };
+  },
+  async updateDealStage({ dealId, stage }) {
+    if (shouldMockFail()) throw new Error('Mock CRM random failure');
+    const d = mockStore.deals.find((x) => x.id === dealId);
+    if (!d) throw new Error('Deal not found');
+    d.stage = stage;
+  },
+};
 
-  async createDeal({ name, amount, stage }) {
-    const id = `crm_mock_deal_${crypto.randomBytes(5).toString('hex')}`;
-    logger.info('crm.mock.createDeal', { id, name, amount, stage });
-    return { id };
-  }
+const API = 'https://api.hubapi.com';
+const auth = () => ({ Authorization: `Bearer ${config.env('HUBSPOT_ACCESS_TOKEN')}` });
+const stageId = (stage) => (stage === 'deposit_paid' ? config.env('HUBSPOT_STAGE_PAID', 'closedwon') : config.env('HUBSPOT_STAGE_LOCKED', 'appointmentscheduled'));
 
-  async updateDealStage(dealId, stage) {
-    logger.info('crm.mock.updateDealStage', { dealId, stage });
-    return { id: dealId, stage };
-  }
-}
-
-class HubSpotCrm {
-  constructor() {
-    this.token = process.env.HUBSPOT_ACCESS_TOKEN;
-    if (!this.token) {
-      throw new AppError(500, 'ADAPTER_NOT_CONFIGURED', 'HubSpot is selected but HUBSPOT_ACCESS_TOKEN is not set.');
-    }
-    this.mode = 'live';
-    this.base = 'https://api.hubapi.com';
-  }
-
-  async api(pathname, method, body) {
-    const res = await fetch(this.base + pathname, {
-      method,
-      headers: { Authorization: `Bearer ${this.token}`, 'Content-Type': 'application/json' },
-      body: body ? JSON.stringify(body) : undefined,
-    });
-    if (!res.ok) throw new Error(`HubSpot ${method} ${pathname} → ${res.status}`);
-    return res.status === 204 ? {} : res.json();
-  }
-
-  async upsertContact({ email, name }) {
-    const [firstname, ...rest] = String(name || '').split(' ');
-    const properties = { email, firstname: firstname || undefined, lastname: rest.join(' ') || undefined };
+const live = {
+  mode: 'live',
+  async createContactAndDeal({ customer, order }) {
+    const [first, ...rest] = String(customer.name).split(' ');
+    let contactId;
     try {
-      const created = await this.api('/crm/v3/objects/contacts', 'POST', { properties });
-      return { id: created.id };
+      const c = await request(`${API}/crm/v3/objects/contacts`, { method: 'POST', headers: auth(), body: { properties: { email: customer.email, firstname: first, lastname: rest.join(' ') || '-', phone: customer.phone || '' } } });
+      contactId = c.id;
     } catch (err) {
-      // 409 → contact exists; find by email and return its id
-      const found = await this.api('/crm/v3/objects/contacts/search', 'POST', {
-        filterGroups: [{ filters: [{ propertyName: 'email', operator: 'EQ', value: email }] }],
-        properties: ['email'],
-        limit: 1,
-      });
-      if (found.results && found.results[0]) return { id: found.results[0].id };
-      throw err;
+      // 409 = contact already exists; HubSpot returns "Existing ID: 123" in the message.
+      const m = err.status === 409 && /Existing ID:\s*(\d+)/.exec(String(err.data && err.data.message));
+      if (!m) throw err;
+      contactId = m[1];
     }
-  }
-
-  async createDeal({ name, amount, stage, ref }) {
-    const deal = await this.api('/crm/v3/objects/deals', 'POST', {
-      properties: { dealname: name, amount: String(amount), dealstage: stage, pipeline: 'default', closedate: null, description: ref },
+    const d = await request(`${API}/crm/v3/objects/deals`, {
+      method: 'POST', headers: auth(),
+      body: {
+        properties: { dealname: `AC replacement ${order.ref}`, amount: (order.quote.totalCents / 100).toFixed(2), dealstage: stageId('quote_locked'), pipeline: config.env('HUBSPOT_PIPELINE', 'default') },
+        associations: [{ to: { id: contactId }, types: [{ associationCategory: 'HUBSPOT_DEFINED', associationTypeId: 3 }] }],
+      },
     });
-    return { id: deal.id };
-  }
+    return { contactId, dealId: d.id };
+  },
+  async updateDealStage({ dealId, stage }) {
+    await request(`${API}/crm/v3/objects/deals/${encodeURIComponent(dealId)}`, { method: 'PATCH', headers: auth(), body: { properties: { dealstage: stageId(stage) } } });
+  },
+};
 
-  async updateDealStage(dealId, stage) {
-    await this.api(`/crm/v3/objects/deals/${dealId}`, 'PATCH', { properties: { dealstage: stage } });
-    return { id: dealId, stage };
-  }
-}
+const problems = () => ['HUBSPOT_ACCESS_TOKEN'].filter((k) => !config.env(k));
 
-module.exports = { MockCrm, HubSpotCrm };
+module.exports = { mock, live, problems };

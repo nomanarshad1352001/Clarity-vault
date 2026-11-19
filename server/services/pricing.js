@@ -1,157 +1,164 @@
 'use strict';
 /**
- * pricing — the ONLY place prices are calculated. Everything is derived from
- * /config JSON at request time. The client sends IDs and quantities; this
- * service returns the authoritative itemized quote. Unknown IDs are rejected.
+ * Server-side pricing engine. ALL prices come from here, computed from /config JSON.
+ * Money is handled in integer cents to avoid floating-point drift.
+ * Pure functions: pass { catalog, rules } in (see configStore.getContext()).
  */
-const { AppError } = require('../errors');
-const configStore = require('../configStore');
 
-const round2 = (n) => Math.round((n + Number.EPSILON) * 100) / 100;
-
-function findSystem(catalog, systemId) {
-  const system = catalog.systems.find((s) => s.id === systemId);
-  if (!system) throw new AppError(422, 'UNKNOWN_SYSTEM', 'Unknown system selected.');
-  return system;
-}
-
-function homeSizeRule(rules, homeSqft) {
-  return (
-    rules.homeSizeMultipliers.find((m) => m.maxSqft === null || homeSqft <= m.maxSqft) ||
-    rules.homeSizeMultipliers[rules.homeSizeMultipliers.length - 1]
-  );
-}
-
-function assertServiceArea(rules, zip) {
-  if (!rules.serviceAreaZips.includes(zip)) {
-    throw new AppError(
-      422,
-      'OUTSIDE_SERVICE_AREA',
-      `We're not serving ${zip} yet — we currently install in ${rules.serviceAreaLabel}.`
-    );
+class PricingError extends Error {
+  constructor(code, message, status = 422) {
+    super(message);
+    this.name = 'PricingError';
+    this.code = code;
+    this.status = status;
   }
 }
 
-/** Standard amortization: M = P·r / (1 − (1+r)^−n). APR of 0 → straight division. */
-function monthlyPayment(principal, apr, months) {
-  if (principal <= 0 || months <= 0) return 0;
-  const r = apr / 12;
-  if (r === 0) return round2(principal / months);
-  return round2((principal * r) / (1 - Math.pow(1 + r, -months)));
+const toCents = (dollars) => Math.round(dollars * 100);
+const pct = (cents, percent) => Math.round((cents * percent) / 100);
+
+function isInServiceArea(zip, rules) {
+  return rules.serviceAreaZips.includes(String(zip));
+}
+
+function findHomeSize(rules, id) {
+  const hs = rules.homeSizeMultipliers.find((h) => h.id === (id || rules.defaultHomeSize));
+  if (!hs) throw new PricingError('unknown_home_size', 'Unknown home size');
+  return hs;
+}
+
+function findSystem(catalog, id) {
+  const s = catalog.systems.find((x) => x.id === id && x.active !== false);
+  if (!s) throw new PricingError('unknown_system', 'That system is not available');
+  return s;
+}
+
+/** Pick the available tonnage closest to (and not below) the suggestion; falls back to the largest. */
+function defaultTonnage(system, homeSize) {
+  const opts = [...system.tonnageOptions].sort((a, b) => a - b);
+  return opts.find((t) => t >= homeSize.suggestedTonnage) ?? opts[opts.length - 1];
+}
+
+/** Standard amortization. Returns cents. */
+function monthlyPaymentCents(principalCents, aprPercent, months) {
+  if (principalCents <= 0) return 0;
+  const r = aprPercent / 100 / 12;
+  if (r === 0) return Math.round(principalCents / months);
+  return Math.round((principalCents * r) / (1 - Math.pow(1 + r, -months)));
+}
+
+function financingOption(amountCents, term) {
+  const monthly = monthlyPaymentCents(amountCents, term.aprPercent, term.months);
+  const totalPayments = monthly * term.months;
+  return {
+    termMonths: term.months,
+    aprPercent: term.aprPercent,
+    amountFinancedCents: amountCents,
+    monthlyPaymentCents: monthly,
+    totalPaymentsCents: totalPayments,
+    totalInterestCents: Math.max(0, totalPayments - amountCents),
+  };
+}
+
+function depositFor(totalCents, rules) {
+  return pct(totalCents, rules.depositPercent);
+}
+
+function systemLine(system, tonnage, homeSize, rules) {
+  const baseCents = toCents(system.basePrice);
+  const adjusted = Math.round(baseCents * homeSize.multiplier);
+  const surcharge = rules.tonnageSurcharges[String(tonnage)];
+  if (surcharge === undefined) throw new PricingError('bad_tonnage', 'Tonnage not priced');
+  return { baseCents, homeSizeAdjustmentCents: adjusted - baseCents, tonnageCents: toCents(surcharge) };
 }
 
 /**
- * computeQuote(input) → authoritative quote object.
- * input: { systemId, tonnageTons, addOnIds[], homeSqft, zip, paymentMethod, termMonths?, budget? }
+ * Calculate a full itemised quote.
+ * input is already zod-validated; this function still enforces business rules.
  */
-function computeQuote(input) {
-  const catalog = configStore.getCatalog();
-  const rules = configStore.getPricingRules();
-
-  assertServiceArea(rules, input.zip);
-
+function calculateQuote(input, { catalog, rules }) {
+  if (!isInServiceArea(input.zip, rules)) {
+    throw new PricingError('outside_service_area', "We don't service that ZIP code yet.", 422);
+  }
   const system = findSystem(catalog, input.systemId);
-  if (!system.tonnageOptions.includes(input.tonnageTons)) {
-    throw new AppError(422, 'INVALID_TONNAGE', 'Selected tonnage is not available for this system.');
+  const homeSize = findHomeSize(rules, input.homeSize);
+  const tonnage = input.tonnage ?? defaultTonnage(system, homeSize);
+  if (!system.tonnageOptions.includes(tonnage)) throw new PricingError('bad_tonnage', 'That tonnage is not offered for this system');
+
+  const brand = catalog.brands.find((b) => b.id === system.brand);
+  const line = systemLine(system, tonnage, homeSize, rules);
+
+  const items = [{ kind: 'system', id: system.id, label: `${brand ? brand.name : system.brand} ${system.name} - ${tonnage} ton installed`, amountCents: line.baseCents }];
+  if (line.homeSizeAdjustmentCents !== 0) items.push({ kind: 'adjustment', id: homeSize.id, label: `Home size adjustment (${homeSize.label})`, amountCents: line.homeSizeAdjustmentCents });
+  if (line.tonnageCents > 0) items.push({ kind: 'adjustment', id: `tonnage-${tonnage}`, label: `${tonnage}-ton capacity upgrade`, amountCents: line.tonnageCents });
+
+  const seen = new Set();
+  for (const id of input.addOnIds || []) {
+    const addOn = catalog.addOns.find((a) => a.id === id && a.active !== false);
+    if (!addOn || seen.has(id)) throw new PricingError('unknown_addon', 'One of the selected add-ons is not available');
+    seen.add(id);
+    items.push({ kind: 'addon', id: addOn.id, label: addOn.name, amountCents: toCents(addOn.price) });
   }
 
-  const addOnIds = [...new Set(input.addOnIds || [])];
-  const addOns = addOnIds.map((id) => {
-    const a = catalog.addOns.find((x) => x.id === id);
-    if (!a) throw new AppError(422, 'UNKNOWN_ADDON', `Unknown add-on: ${id}`);
-    return { id: a.id, name: a.name, price: a.price };
-  });
+  const systemCents = items.filter((i) => i.kind !== 'addon').reduce((s, i) => s + i.amountCents, 0);
+  const addOnsCents = items.filter((i) => i.kind === 'addon').reduce((s, i) => s + i.amountCents, 0);
+  const subtotalCents = systemCents + addOnsCents;
+  const taxCents = pct(subtotalCents, rules.taxRatePercent);
+  const totalCents = subtotalCents + taxCents;
+  const depositCents = depositFor(totalCents, rules);
+  const balanceCents = totalCents - depositCents;
 
-  const sizeRule = homeSizeRule(rules, input.homeSqft);
-  const tonnageDelta = Number(rules.tonnagePriceDelta[String(input.tonnageTons)] || 0);
-
-  const adjustments = [];
-  if (tonnageDelta !== 0) {
-    adjustments.push({ label: `${input.tonnageTons}-ton capacity`, amount: tonnageDelta });
-  }
-  const systemPrice = round2((system.baseInstalledPrice + tonnageDelta) * sizeRule.multiplier);
-  if (sizeRule.multiplier !== 1) {
-    adjustments.push({
-      label: `Home size (${sizeRule.label})`,
-      amount: round2(systemPrice - (system.baseInstalledPrice + tonnageDelta)),
-    });
-  }
-
-  const addOnsTotal = round2(addOns.reduce((sum, a) => sum + a.price, 0));
-  const subtotal = round2(systemPrice + addOnsTotal);
-  const tax = round2(subtotal * rules.taxRate);
-  const total = round2(subtotal + tax);
-  const deposit = round2(total * rules.depositPercent);
-
+  const financingOptions = rules.financingTerms.map((t) => financingOption(balanceCents, t));
   let financing = null;
   if (input.paymentMethod === 'financing') {
-    const term = rules.financing.terms.find((t) => t.months === input.termMonths);
-    if (!term) throw new AppError(422, 'INVALID_TERM', 'Choose one of the available financing terms.');
-    const principal = round2(total - deposit); // deposit is paid today, remainder financed
-    const monthly = monthlyPayment(principal, term.apr, term.months);
-    financing = {
-      months: term.months,
-      apr: term.apr,
-      principal,
-      monthlyPayment: monthly,
-      totalOfPayments: round2(monthly * term.months + deposit),
-      totalInterest: round2(monthly * term.months - principal),
-    };
+    financing = financingOptions.find((o) => o.termMonths === input.termMonths);
+    if (!financing) throw new PricingError('bad_term', 'That financing term is not available');
   }
 
-  const quote = {
-    system: {
-      id: system.id,
-      brand: system.brand,
-      name: system.name,
-      tier: system.tier,
-      tons: input.tonnageTons,
-      seer2: system.seer2,
-      noiseDb: system.noiseDb,
-      warrantyYears: system.warrantyYears,
-      baseInstalledPrice: system.baseInstalledPrice,
-      price: systemPrice,
-    },
-    adjustments,
-    addOns,
-    addOnsTotal,
-    subtotal,
-    taxRate: rules.taxRate,
-    tax,
-    total,
+  return {
+    currency: rules.currency,
+    system: { id: system.id, brand: system.brand, brandName: brand ? brand.name : system.brand, tier: system.tier, name: system.name, tonnage, seer2: system.seer2, noiseDb: system.noiseDb, warrantyYears: system.warrantyYears },
+    homeSize: { id: homeSize.id, label: homeSize.label },
+    items,
+    systemCents,
+    addOnsCents,
+    subtotalCents,
+    taxRatePercent: rules.taxRatePercent,
+    taxCents,
+    totalCents,
     depositPercent: rules.depositPercent,
-    deposit,
+    depositCents,
+    balanceCents,
     paymentMethod: input.paymentMethod,
     financing,
-    currency: rules.currency,
-    priceLockDays: rules.priceLockDays,
-    homeSqft: input.homeSqft,
+    financingOptions,
     zip: input.zip,
+    budget: { amount: input.budget, type: input.budgetType || 'total' },
   };
-
-  if (input.budget && input.budget.amount > 0) {
-    quote.budgetFit = budgetFit(input.budget, quote, rules);
-  }
-  return quote;
 }
 
-function budgetFit(budget, quote, rules) {
-  if (budget.type === 'total') {
-    if (quote.total <= budget.amount) return 'within';
-    if (quote.total <= budget.amount * 1.1) return 'stretch';
-    return 'over';
-  }
-  const term = rules.financing.terms[rules.financing.terms.length - 1]; // longest term
-  const monthly = monthlyPayment(round2(quote.total - quote.deposit), term.apr, term.months);
-  if (monthly <= budget.amount) return 'within';
-  if (monthly <= budget.amount * 1.1) return 'stretch';
-  return 'over';
+/**
+ * Catalog view with a per-system estimate and budget fit, computed server-side.
+ * fit: 'within' | 'stretch' (<=15% over) | 'over'
+ */
+function estimateSystems({ budget, budgetType, homeSize: homeSizeId }, { catalog, rules }) {
+  const homeSize = findHomeSize(rules, homeSizeId);
+  const longestTerm = rules.financingTerms.reduce((a, b) => (b.months > a.months ? b : a));
+  return catalog.systems.filter((s) => s.active !== false).map((s) => {
+    const tonnage = defaultTonnage(s, homeSize);
+    const line = systemLine(s, tonnage, homeSize, rules);
+    const subtotal = line.baseCents + line.homeSizeAdjustmentCents + line.tonnageCents;
+    const total = subtotal + pct(subtotal, rules.taxRatePercent);
+    const balance = total - depositFor(total, rules);
+    const monthly = financingOption(balance, longestTerm).monthlyPaymentCents;
+    let fit = null;
+    if (budget) {
+      const compare = budgetType === 'monthly' ? monthly : total;
+      const limit = toCents(budget);
+      fit = compare <= limit ? 'within' : compare <= limit * 1.15 ? 'stretch' : 'over';
+    }
+    return { ...s, estimate: { tonnage, totalCents: total, lowestMonthlyCents: monthly, lowestMonthlyTermMonths: longestTerm.months }, fit };
+  });
 }
 
-/** Estimated monthly for display on system cards (longest available term). */
-function estimateMonthly(total, deposit, rules) {
-  const term = rules.financing.terms[rules.financing.terms.length - 1];
-  return monthlyPayment(round2(total - deposit), term.apr, term.months);
-}
-
-module.exports = { computeQuote, monthlyPayment, estimateMonthly, round2, homeSizeRule };
+module.exports = { PricingError, calculateQuote, estimateSystems, monthlyPaymentCents, financingOption, depositFor, isInServiceArea, toCents, defaultTonnage, findHomeSize };

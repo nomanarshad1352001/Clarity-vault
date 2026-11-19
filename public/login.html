@@ -1,71 +1,62 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
-  <meta name="theme-color" content="#FCF1EA" />
-  <title>Sign in — AireDirect</title>
-  <meta name="description" content="Price a new AC system online — no sales visit." />
-  <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
-  <link rel="preload" href="/assets/fonts/source-serif-4.woff2" as="font" type="font/woff2" crossorigin />
-  <link rel="preload" href="/assets/fonts/dm-sans.woff2" as="font" type="font/woff2" crossorigin />
-  <link rel="stylesheet" href="/assets/css/app.css" />
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Sign in — CoolHome Vault</title>
+  <meta name="theme-color" content="#f9efe5">
+  <link rel="preload" href="/fonts/serif.woff2" as="font" type="font/woff2" crossorigin>
+  <link rel="preload" href="/fonts/inter.woff2" as="font" type="font/woff2" crossorigin>
+  <link rel="stylesheet" href="/css/styles.css">
 </head>
-<body class="layout-phone">
-  <div class="stage">
-    <div class="device">
-      <div class="device-screen">
-        <div class="island" aria-hidden="true"></div>
-        <div class="screen-scroll" id="screen-scroll">
-          <header id="app-header"></header>
-          <div class="pill-row"><span class="pill" id="screen-pill"><span class="pill-text">100% online — no sales visit</span></span></div>
-          <main class="screen-body">
-            <form class="sheet" id="login-form" novalidate>
-              <div class="sheet-inner">
-                <div class="step-panel">
-                  <div class="sheet-head">
-                    <h1 class="sheet-title">Price your new AC.</h1>
-                    <p class="sheet-sub">Sign in to see real installed prices…</p>
-                  </div>
-                  <div class="sheet-body stagger">
-                    <div class="ghost-field">
-                      <label class="sr-only" for="email">Email</label>
-                      <input class="ghost-input" id="email" name="email" type="email" autocomplete="email" placeholder="Email address" required />
-                    </div>
-                    <div class="ghost-field ghost-pass">
-                      <label class="sr-only" for="password">Password</label>
-                      <input class="ghost-input" id="password" name="password" type="password" autocomplete="current-password" placeholder="Password" required />
-                      <button class="eye-btn" id="eye-btn" type="button" aria-label="Show password"></button>
-                    </div>
-                    <div id="login-error"></div>
-                    <div class="demo-as" id="demo-as" hidden>
-                      <span class="mini-label">Demo as…</span>
-                      <div class="chips chips-center">
-                        <button class="chip chip-role" data-email="homeowner@demo.com" type="button"><span data-icon="home"></span>Homeowner</button>
-                        <button class="chip chip-role" data-email="sales@demo.com" type="button"><span data-icon="briefcase"></span>Sales</button>
-                        <button class="chip chip-role" data-email="admin@demo.com" type="button"><span data-icon="settings"></span>Admin</button>
-                      </div>
-                      <p class="hint center">Fills the form for you · password <b>Demo@123</b></p>
-                    </div>
-                  </div>
-                </div>
+<body class="vault-body">
+  <div id="chrome"></div>
+  <div class="vault-stage">
+    <div class="vault-device">
+      <div class="vault-notch" aria-hidden="true"></div>
+      <div id="vault-header"></div>
+      <main class="vault-inner">
+        <section class="vault-card" id="login-card">
+          <div class="vault-head">
+            <h1>Who’s stepping in?</h1>
+            <p class="vault-prompt">Choose a demo role or enter your credentials...</p>
+          </div>
+          <div id="denied" class="alert warn hidden" role="alert">Your account doesn't have access to that page.</div>
+
+          <section id="demo" class="hidden" aria-label="Demo accounts">
+            <div class="small muted center"><strong>Demo as&hellip;</strong> (autofills email &amp; password)</div>
+            <div class="role-cards" id="role-cards">
+              <button type="button" class="role-card" data-demo="homeowner@demo.com"><span class="ri" id="ri-h"></span><b>Homeowner</b><span>Quote flow</span></button>
+              <button type="button" class="role-card" data-demo="sales@demo.com"><span class="ri" id="ri-s"></span><b>Sales</b><span>Pipeline</span></button>
+              <button type="button" class="role-card" data-demo="admin@demo.com"><span class="ri" id="ri-a"></span><b>Admin</b><span>Catalog &amp; rules</span></button>
+            </div>
+          </section>
+
+          <form id="login-form" novalidate>
+            <div class="field">
+              <label for="email">Email</label>
+              <input id="email" name="email" type="email" autocomplete="username" placeholder="you@example.com" required>
+            </div>
+            <div class="field">
+              <label for="password">Password</label>
+              <div class="pw-wrap">
+                <input id="password" name="password" type="password" autocomplete="current-password" placeholder="••••••••" required>
+                <button type="button" id="pw-toggle" aria-label="Show password">Show</button>
               </div>
-              <div class="sheet-actions">
-                <span></span>
-                <div class="orb-wrap">
-                  <button class="orb" id="login-btn" type="submit" aria-label="Sign in"><span class="orb-core" id="orb-core"></span></button>
-                  <span class="orb-label">Sign in</span>
-                </div>
-                <span></span>
-              </div>
-            </form>
-            <p class="screen-foot" id="screen-foot">Prices are calculated on our server, never in your browser</p>
-          </main>
-        </div>
+            </div>
+            <div id="error" class="alert bad hidden" role="alert"></div>
+            <button class="btn block lg mt" type="submit" id="submit">Sign in</button>
+          </form>
+
+          <p class="center small mt mb0"><a href="/quote">Continue to quote without signing in &rarr;</a></p>
+        </section>
+        <div class="vault-foot">Signed httpOnly session &middot; Role-protected access</div>
         <div class="home-indicator" aria-hidden="true"></div>
-      </div>
+      </main>
     </div>
   </div>
-  <script type="module" src="/assets/js/login.js"></script>
+  <script src="/js/common.js"></script>
+  <script src="/js/fx.js"></script>
+  <script src="/js/login.js"></script>
 </body>
 </html>

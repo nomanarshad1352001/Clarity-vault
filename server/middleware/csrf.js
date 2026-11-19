@@ -1,40 +1,45 @@
 'use strict';
 /**
- * CSRF protection for cookie-authenticated mutations.
- *
- * The CSRF token is an HMAC of the raw session JWT, so it is stateless:
- * the client receives it from /api/auth/login or /api/auth/me and must send it
- * back as the `x-csrf-token` header on every cookie-authenticated
- * POST/PUT/PATCH/DELETE. Cross-site attackers cannot read the token
- * (httpOnly cookie + same-origin JSON endpoint), so forged requests fail.
- *
- * Exempt paths: login (no session yet, protected by rate limit + SameSite
- * cookie) and the Stripe webhook (authenticated by Stripe's own signature).
+ * CSRF protection for cookie-authenticated requests: signed double-submit token + Origin check.
+ *  - GET /api/csrf (or any API GET) sets a `csrf_token` cookie (readable by JS) containing "<random>.<hmac>".
+ *  - Unsafe methods must send the same value in the `X-CSRF-Token` header.
+ *  - The HMAC stops an attacker who can only inject cookies from forging a valid pair.
+ *  - If an Origin header is present it must match the request host.
+ * The payment webhook is exempt (it is authenticated by its signature, not a cookie).
  */
 const crypto = require('crypto');
-const { AppError } = require('../errors');
+const config = require('../config');
 
-const CSRF_SECRET = process.env.CSRF_SECRET || 'dev-only-insecure-csrf-secret';
-const EXEMPT_PATHS = new Set(['/api/auth/login', '/api/payments/webhook']);
-const SAFE_METHODS = new Set(['GET', 'HEAD', 'OPTIONS']);
+const sign = (rand) => crypto.createHmac('sha256', config.secrets.csrf).update(rand).digest('hex');
+const issue = () => { const r = crypto.randomBytes(24).toString('hex'); return `${r}.${sign(r)}`; };
 
-function tokenForSession(sessionToken) {
-  return crypto.createHmac('sha256', CSRF_SECRET).update(String(sessionToken)).digest('hex');
+function valid(token) {
+  if (typeof token !== 'string') return false;
+  const [rand, mac] = token.split('.');
+  if (!rand || !mac) return false;
+  const a = Buffer.from(mac); const b = Buffer.from(sign(rand));
+  return a.length === b.length && crypto.timingSafeEqual(a, b);
 }
 
-function csrfProtection(req, _res, next) {
-  if (SAFE_METHODS.has(req.method)) return next();
-  if (!req.user || !req.sessionToken) return next(); // not cookie-authenticated
-  const path = (req.baseUrl || '') + req.path;
-  if (EXEMPT_PATHS.has(path) || EXEMPT_PATHS.has(req.path)) return next();
-  const sent = req.get('x-csrf-token') || '';
-  const expected = tokenForSession(req.sessionToken);
-  const a = Buffer.from(String(sent));
-  const b = Buffer.from(expected);
-  if (a.length !== b.length || !crypto.timingSafeEqual(a, b)) {
-    return next(new AppError(403, 'CSRF_FAILED', 'Security check failed. Refresh the page and try again.'));
+function csrf(req, res, next) {
+  let cookieToken = req.cookies && req.cookies.csrf_token;
+  if (!valid(cookieToken)) {
+    cookieToken = issue();
+    res.cookie('csrf_token', cookieToken, { httpOnly: false, sameSite: 'lax', secure: config.cookieSecure, path: '/' });
+    req.cookies.csrf_token = cookieToken;
   }
-  return next();
+  if (['GET', 'HEAD', 'OPTIONS'].includes(req.method)) return next();
+
+  const origin = req.get('origin');
+  if (origin) {
+    let host;
+    try { host = new URL(origin).host; } catch { host = null; }
+    if (host !== req.get('host')) return res.status(403).json({ error: 'csrf_invalid', message: 'Cross-origin request blocked' });
+  }
+  const header = req.get('x-csrf-token');
+  const ok = header && header.length === cookieToken.length && crypto.timingSafeEqual(Buffer.from(header), Buffer.from(cookieToken));
+  if (!ok) return res.status(403).json({ error: 'csrf_invalid', message: 'Missing or invalid CSRF token' });
+  next();
 }
 
-module.exports = { csrfProtection, tokenForSession };
+module.exports = { csrf, issue, valid };

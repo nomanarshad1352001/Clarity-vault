@@ -1,0 +1,141 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>CoolHome Vault — Self-Serve AC Pricing, 100% No Sales Visit</title>
+  <meta name="description" content="Price a Goodman, Rheem or Trane AC system online with zero sales visits, and lock a server-verified price for 7 days.">
+  <meta name="theme-color" content="#f9efe5">
+  <link rel="preload" href="/fonts/serif.woff2" as="font" type="font/woff2" crossorigin>
+  <link rel="preload" href="/fonts/inter.woff2" as="font" type="font/woff2" crossorigin>
+  <link rel="stylesheet" href="/css/styles.css">
+</head>
+<body>
+  <div id="chrome"></div>
+
+  <section class="linen-hero" id="top">
+    <div class="hero-showcase">
+      <div class="hero-editorial reveal">
+        <div class="eyebrow">Private Online Quote Vault</div>
+        <h1>Price your new AC in quiet clarity.</h1>
+        <p class="lead">No kitchen-table sales pitch. Set a budget, verify your address, compare Goodman, Rheem and Trane systems, and lock a tamper-proof installed price for 7 days.</p>
+        <div class="hero-cta">
+          <a class="btn lg" href="/quote" data-magnetic>Start my quote &rarr;</a>
+          <a class="btn lg secondary" href="#fit">Check my budget</a>
+        </div>
+        <div class="hero-trust">
+          <span>Server-calculated pricing</span>
+          <span>Pay in full or finance</span>
+          <span>Signed 7-day price lock</span>
+        </div>
+      </div>
+
+      <div class="phone-stage reveal">
+        <div class="phone-bezel" aria-label="Interactive CoolHome Vault preview">
+          <div class="phone-screen">
+            <div class="dynamic-island" aria-hidden="true"></div>
+            <div class="phone-top" id="phone-top"></div>
+            <div class="phone-status">
+              <div class="sess">Active Session</div>
+              <div class="vault-rule"></div>
+              <div class="vault-pill">100% Private &middot; No Sales Visit</div>
+            </div>
+            <div class="phone-card">
+              <h2 id="phone-heading">What feels comfortable?</h2>
+              <textarea id="phone-prompt" class="phone-input" rows="2" maxlength="90" aria-label="Say or type your budget or ZIP" placeholder="Say what’s on your mind — e.g. $8,500 in 78701..."></textarea>
+              <div class="phone-live-pill hidden" id="phone-live"></div>
+              <div id="phone-orb"></div>
+            </div>
+            <div class="vault-foot">Locks for 7 days the second you reserve it</div>
+            <div class="home-indicator" aria-hidden="true"></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section class="section cream-surface">
+    <div class="section-inner">
+      <div class="stats-band reveal" id="stats">
+        <div><b data-count="5" data-suffix=" min">0</b><span>calm, self-guided quote</span></div>
+        <div><b data-count="7" data-suffix=" days">0</b><span>cryptographic price lock</span></div>
+        <div><b data-count="9">0</b><span>Goodman, Rheem &amp; Trane tiers</span></div>
+        <div><b data-count="0">0</b><span>in-home sales visits</span></div>
+      </div>
+    </div>
+  </section>
+
+  <section class="section" id="how">
+    <div class="section-inner center">
+      <div class="eyebrow reveal">How it works</div>
+      <h2 class="reveal">Seven calm steps from budget to locked price</h2>
+      <p class="muted reveal">Every figure is computed on our server from published rules — never negotiated in your living room.</p>
+      <div class="timeline reveal mt2" id="timeline"></div>
+    </div>
+  </section>
+
+  <section class="section cream-surface" id="fit">
+    <div class="section-inner">
+      <div class="calc reveal">
+        <div>
+          <div class="eyebrow">Live budget studio</div>
+          <h2>What fits your budget?</h2>
+          <div class="seg mt" role="group" aria-label="Budget type" id="calc-type">
+            <button type="button" data-t="total" aria-pressed="true">Total budget</button>
+            <button type="button" data-t="monthly" aria-pressed="false">Monthly budget</button>
+          </div>
+          <div class="amount mt" id="calc-amount">$9,000</div>
+          <input type="range" id="calc-range" min="3000" max="20000" step="250" value="9000" aria-label="Budget">
+          <p class="muted mt" id="calc-sum">Slide to preview server-estimated installed prices.</p>
+          <a class="btn" id="calc-go" href="/quote">Continue with this budget &rarr;</a>
+        </div>
+        <div class="fit-list" id="fit-list" aria-live="polite"></div>
+      </div>
+    </div>
+  </section>
+
+  <section class="section">
+    <div class="section-inner">
+      <div class="center">
+        <div class="eyebrow reveal">Quiet home comfort</div>
+        <h2 class="reveal">Thoughtful equipment, transparent numbers</h2>
+      </div>
+      <div class="bento mt2">
+        <article class="photo-mat reveal">
+          <img src="/media/hero-living.jpg" alt="Sunlit calm living room" loading="lazy">
+          <h3>Sized to your square footage</h3>
+          <p>We match tonnage to your home size and show every capacity upgrade transparently.</p>
+        </article>
+        <article class="photo-mat reveal">
+          <img src="/media/installer.jpg" alt="HVAC technician servicing outdoor unit" loading="lazy">
+          <h3>Goodman, Rheem &amp; Trane</h3>
+          <p>Compare Good, Better, and Best tiers side by side with SEER2, sound, and warranty specs.</p>
+        </article>
+        <article class="photo-mat reveal">
+          <img src="/media/living-2.jpg" alt="Contemporary quiet apartment interior" loading="lazy">
+          <h3>Pay in full or finance</h3>
+          <p>Preview 12, 36, or 60-month monthly payments with no credit pull required.</p>
+        </article>
+      </div>
+    </div>
+  </section>
+
+  <section class="section cream-surface" id="faq">
+    <div class="section-inner">
+      <div class="center">
+        <div class="eyebrow reveal">Questions</div>
+        <h2 class="reveal">Clear answers up front</h2>
+      </div>
+      <div class="faq mt2 reveal" id="faq-list"></div>
+    </div>
+  </section>
+
+  <footer class="footer">
+    <div><strong>CoolHome Vault</strong> &middot; Placeholder catalog &amp; pricing values — replace before go-live &middot; <a href="/quote">Open Quote</a> &middot; <a href="/login">Staff Sign In</a></div>
+  </footer>
+
+  <script src="/js/common.js"></script>
+  <script src="/js/fx.js"></script>
+  <script src="/js/home.js"></script>
+</body>
+</html>

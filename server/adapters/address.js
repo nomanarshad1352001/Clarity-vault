@@ -1,83 +1,60 @@
 'use strict';
 /**
- * address adapter — interface:
- *   autocomplete(query)     → [{ label, street, zip }]
- *   checkServiceArea(zip)   → { serviceable, message }   (always enforced from
- *                                                          local config, even in
- *                                                          live mode)
- * Live implementation: Google Places Autocomplete (New).
+ * Address lookup adapter interface:
+ *   suggest(query)   -> [{ id, description }]
+ *   details(id)      -> { street, city, state, zip } | null
+ * The service-area check is done by the route using config/pricing-rules.json, never by the adapter.
  */
-const configStore = require('../configStore');
-const { AppError } = require('../errors');
+const config = require('../config');
+const { request } = require('./http');
 
-function serviceAreaCheck(zip) {
-  const rules = configStore.getPricingRules();
-  if (rules.serviceAreaZips.includes(zip)) {
-    return { serviceable: true, message: `Good news — we install in ${rules.serviceAreaLabel}.` };
-  }
-  return {
-    serviceable: false,
-    message: `We're not in ${zip} yet. We currently serve ${rules.serviceAreaLabel} — join the waitlist and we'll reach out when we expand.`,
-  };
-}
+const SAMPLE = [
+  { street: '1100 Congress Ave', city: 'Austin', state: 'TX', zip: '78701' },
+  { street: '2210 S Lamar Blvd', city: 'Austin', state: 'TX', zip: '78704' },
+  { street: '4501 Duval St', city: 'Austin', state: 'TX', zip: '78751' },
+  { street: '7301 Burnet Rd', city: 'Austin', state: 'TX', zip: '78757' },
+  { street: '9012 Research Blvd', city: 'Austin', state: 'TX', zip: '78758' },
+  { street: '3300 Manchaca Rd', city: 'Austin', state: 'TX', zip: '78704' },
+  { street: '5805 Balcones Dr', city: 'Austin', state: 'TX', zip: '78731' },
+  { street: '1200 Main St', city: 'Dallas', state: 'TX', zip: '75202' },
+  { street: '800 Travis St', city: 'Houston', state: 'TX', zip: '77002' },
+].map((a, i) => ({ id: `mock-${i}`, ...a, description: `${a.street}, ${a.city}, ${a.state} ${a.zip}` }));
 
-class MockAddress {
-  constructor() {
-    this.mode = 'mock';
-  }
+const mock = {
+  mode: 'mock',
+  async suggest(q) {
+    const needle = q.toLowerCase();
+    return SAMPLE.filter((a) => a.description.toLowerCase().includes(needle)).slice(0, 5).map(({ id, description }) => ({ id, description }));
+  },
+  async details(id) {
+    const a = SAMPLE.find((x) => x.id === id);
+    return a ? { street: a.street, city: a.city, state: a.state, zip: a.zip } : null;
+  },
+};
 
-  async autocomplete(query) {
-    const q = String(query || '').trim();
-    if (q.length < 3) return [];
-    const rules = configStore.getPricingRules();
-    const streets = ['Maple Ave', 'Oak Lawn Dr', 'Cedar Springs Rd', 'Elm St', 'Pecan Ridge Ln', 'Mockingbird Ln'];
-    const zips = rules.serviceAreaZips;
-    const seed = [...q].reduce((a, c) => a + c.charCodeAt(0), 0);
-    const out = [];
-    for (let i = 0; i < 4; i += 1) {
-      const num = 100 + ((seed * (i + 3)) % 8900);
-      const street = streets[(seed + i) % streets.length];
-      const zip = zips[(seed + i * 7) % zips.length];
-      out.push({ label: `${num} ${street}, Dallas, TX ${zip}`, street: `${num} ${street}`, zip });
-    }
-    return out;
-  }
+const KEY = () => ({ 'X-Goog-Api-Key': config.env('GOOGLE_PLACES_API_KEY') });
 
-  async checkServiceArea(zip) {
-    return serviceAreaCheck(zip);
-  }
-}
-
-class GooglePlacesAddress {
-  constructor() {
-    this.key = process.env.GOOGLE_PLACES_API_KEY;
-    if (!this.key) {
-      throw new AppError(500, 'ADAPTER_NOT_CONFIGURED', 'Google Places is selected but GOOGLE_PLACES_API_KEY is not set.');
-    }
-    this.mode = 'live';
-  }
-
-  async autocomplete(query) {
-    const res = await fetch('https://places.googleapis.com/v1/places:autocomplete', {
+const live = {
+  mode: 'live',
+  async suggest(q) {
+    const r = await request('https://places.googleapis.com/v1/places:autocomplete', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'X-Goog-Api-Key': this.key },
-      body: JSON.stringify({ input: String(query || ''), includedRegionCodes: ['us'] }),
+      headers: { ...KEY(), 'X-Goog-FieldMask': 'suggestions.placePrediction.placeId,suggestions.placePrediction.text.text' },
+      body: { input: q, includedRegionCodes: ['us'], includedPrimaryTypes: ['street_address', 'premise', 'subpremise'] },
     });
-    if (!res.ok) throw new Error(`Places autocomplete → ${res.status}`);
-    const data = await res.json();
-    return (data.suggestions || [])
-      .filter((s) => s.placePrediction)
-      .slice(0, 5)
-      .map((s) => ({
-        label: s.placePrediction.text.text,
-        street: s.placePrediction.structuredFormat?.mainText?.text || s.placePrediction.text.text,
-        zip: (s.placePrediction.text.text.match(/\b\d{5}\b/) || [null])[0],
-      }));
-  }
+    return ((r && r.suggestions) || []).filter((s) => s.placePrediction).slice(0, 5).map((s) => ({ id: s.placePrediction.placeId, description: s.placePrediction.text.text }));
+  },
+  async details(id) {
+    const r = await request(`https://places.googleapis.com/v1/places/${encodeURIComponent(id)}`, { headers: { ...KEY(), 'X-Goog-FieldMask': 'addressComponents' } });
+    const parts = (r && r.addressComponents) || [];
+    const find = (type, short) => { const c = parts.find((p) => p.types && p.types.includes(type)); return c ? (short ? c.shortText : c.longText) : ''; };
+    const street = `${find('street_number')} ${find('route')}`.trim();
+    const zip = find('postal_code');
+    if (!street || !zip) return null;
+    return { street, city: find('locality') || find('sublocality'), state: find('administrative_area_level_1', true), zip };
+  },
+};
 
-  async checkServiceArea(zip) {
-    return serviceAreaCheck(zip);
-  }
-}
+const problems = () => ['GOOGLE_PLACES_API_KEY'].filter((k) => !config.env(k));
 
-module.exports = { MockAddress, GooglePlacesAddress };
+module.exports = { mock, live, problems };

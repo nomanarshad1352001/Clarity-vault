@@ -1,87 +1,66 @@
 'use strict';
 /**
- * financing adapter — interface ready for a real lender:
- *   getTerms()                                   → available terms
- *   prequalify({ applicant, monthlyPayment, statedMonthlyBudget, termMonths, principal }) → decision
- *   getOffer(applicationId)                      → firm offer after full application
- *
- * Mock rules (config: pricing-rules.financing.mockRules):
- *   monthly ≤ budget × approveUpToBudgetRatio   → approved
- *   monthly ≤ budget × reviewUpToBudgetRatio    → pending_review
- *   otherwise                                   → declined
+ * Financing adapter interface (ready for a real lender):
+ *   prequalify({ applicantRef, amountCents, termMonths, monthlyPaymentCents, budget, budgetType, zip })
+ *        -> { status: 'approved'|'declined'|'pending', decisionId, reasons: string[] }
+ *   getOffer({ amountCents, termMonths }) -> { termMonths, aprPercent, monthlyPaymentCents, ... }
+ *   getTerms(termMonths) -> { termMonths, aprPercent, disclosure }
+ * No SSN / credit data is collected by this app; a real lender flow should redirect to the lender's hosted application.
  */
 const crypto = require('crypto');
-const configStore = require('../configStore');
-const { AppError } = require('../errors');
-const logger = require('../logger');
-const { round2 } = require('../services/pricing');
+const configStore = require('../services/configStore');
+const { financingOption } = require('../services/pricing');
+const { request } = require('./http');
+const config = require('../config');
 
-class MockFinancing {
-  constructor() {
-    this.mode = 'mock';
-  }
+const decisionId = () => `fin_${crypto.randomBytes(6).toString('hex')}`;
 
-  async getTerms() {
-    return configStore.getPricingRules().financing.terms;
-  }
-
-  async prequalify({ monthlyPayment, statedMonthlyBudget, termMonths, principal }) {
-    const rules = configStore.getPricingRules().financing;
-    const term = rules.terms.find((t) => t.months === termMonths);
-    if (!term) throw new AppError(422, 'INVALID_TERM', 'Choose one of the available financing terms.');
-    const ratio = monthlyPayment / statedMonthlyBudget;
-    const applicationId = `fin_mock_${crypto.randomBytes(6).toString('hex')}`;
-    const offer = {
-      applicationId,
-      termMonths,
-      apr: term.apr,
-      monthlyPayment,
-      principal,
-    };
-    logger.info('financing.mock.prequalify', { ratio: round2(ratio), termMonths });
-    if (ratio <= rules.mockRules.approveUpToBudgetRatio) {
-      return { status: 'approved', offer, message: 'Pre-approved instantly.' };
+const mock = {
+  mode: 'mock',
+  async prequalify({ amountCents, termMonths, monthlyPaymentCents, budget, budgetType }) {
+    const rules = configStore.getPricing().financingRules;
+    const reasons = [];
+    if (amountCents < rules.minimumFinancedCents) {
+      return { status: 'declined', decisionId: decisionId(), reasons: ['The amount to finance is below the lender minimum. Paying in full is simpler for this order.'] };
     }
-    if (ratio <= rules.mockRules.reviewUpToBudgetRatio) {
-      return {
-        status: 'pending_review',
-        offer,
-        message: 'This one needs a quick manual review — you can still lock your price today.',
-      };
+    const monthlyBudget = budgetType === 'monthly' ? budget : budget / rules.impliedMonthsForTotalBudget;
+    const limit = (monthlyBudget * rules.maxPaymentPercentOfMonthlyBudget) / 100;
+    if (monthlyPaymentCents / 100 > limit) {
+      return { status: 'declined', decisionId: decisionId(), reasons: [`The ${termMonths}-month payment is higher than your stated budget allows. A longer term or paying in full may work.`] };
     }
-    return {
-      status: 'declined',
-      reasonCode: 'PAYMENT_EXCEEDS_BUDGET',
-      maxMonthlyPayment: round2(statedMonthlyBudget * rules.mockRules.approveUpToBudgetRatio),
-      message: 'The monthly payment is above the budget you set. Try a longer term, a different system, or pay in full.',
-    };
-  }
+    if (amountCents > rules.manualReviewAboveCents) {
+      reasons.push('Larger financed amounts need a quick manual review by our lending partner.');
+      return { status: 'pending', decisionId: decisionId(), reasons };
+    }
+    return { status: 'approved', decisionId: decisionId(), reasons: ['Pre-qualified based on your budget. No credit pull has been made.'] };
+  },
+  async getOffer({ amountCents, termMonths }) {
+    const term = configStore.getPricing().financingTerms.find((t) => t.months === termMonths);
+    if (!term) throw new Error('Unknown term');
+    return financingOption(amountCents, term);
+  },
+  async getTerms(termMonths) {
+    const term = configStore.getPricing().financingTerms.find((t) => t.months === termMonths);
+    if (!term) throw new Error('Unknown term');
+    return { termMonths, aprPercent: term.aprPercent, disclosure: 'DEMO TERMS - placeholder text. Real lender disclosures replace this. Subject to lender approval; APR and terms may vary.' };
+  },
+};
 
-  async getOffer() {
-    throw new AppError(501, 'NOT_IMPLEMENTED', 'Mock lender does not keep offers; call prequalify again.');
-  }
-}
+/** Generic REST lender skeleton. Adapt paths / payloads / auth to your lender's API contract. */
+const headers = () => ({ Authorization: `Bearer ${config.env('FINANCING_API_KEY')}` });
+const base = () => config.env('FINANCING_API_URL').replace(/\/$/, '');
 
-/**
- * LiveFinancing — drop-in for a real lender API (e.g. a point-of-sale lending
- * partner). Implement the same three methods; routes and UI need no changes.
- */
-class LiveFinancing {
-  constructor() {
-    this.mode = 'live';
-  }
+const live = {
+  mode: 'live',
+  async prequalify(input) {
+    const r = await request(`${base()}/prequalify`, { method: 'POST', headers: headers(), body: input });
+    const status = ['approved', 'declined', 'pending'].includes(r && r.status) ? r.status : 'pending';
+    return { status, decisionId: (r && r.decisionId) || decisionId(), reasons: (r && r.reasons) || [] };
+  },
+  async getOffer(input) { return request(`${base()}/offers`, { method: 'POST', headers: headers(), body: input }); },
+  async getTerms(termMonths) { return request(`${base()}/terms?months=${encodeURIComponent(termMonths)}`, { headers: headers() }); },
+};
 
-  async getTerms() {
-    return configStore.getPricingRules().financing.terms;
-  }
+const problems = () => ['FINANCING_API_URL', 'FINANCING_API_KEY'].filter((k) => !config.env(k));
 
-  async prequalify() {
-    throw new AppError(501, 'FINANCING_NOT_CONFIGURED', 'Live lender integration is not wired up yet.');
-  }
-
-  async getOffer() {
-    throw new AppError(501, 'FINANCING_NOT_CONFIGURED', 'Live lender integration is not wired up yet.');
-  }
-}
-
-module.exports = { MockFinancing, LiveFinancing };
+module.exports = { mock, live, problems };

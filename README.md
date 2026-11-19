@@ -1,159 +1,159 @@
-# AireDirect — self-serve AC pricing
+# Self-serve AC pricing & price-lock tool
 
-Homeowners price a new AC system online with **no sales visit**: set a budget → enter an address → choose a Goodman, Rheem or Trane system → pick add-ons → pay in full or finance → pay a deposit → lock the price for 7 days.
+Homeowners price a new AC online with no sales visit:
+**budget → address → system (Goodman / Rheem / Trane) → add-ons → pay in full or finance → deposit → locked price.**
 
-> ⚠️ **All catalog data and pricing rules are placeholders** (`config/*.json`) — replace them with real business data before go-live. The app runs in **demo mode**: mock payments, mock financing, mock CRM/email/SMS/address lookups, demo user accounts, and an in-memory order store that resets on restart.
+> ## ⚠️ ALL DATA IS PLACEHOLDER
+> Every value in `config/catalog.json`, `config/pricing-rules.json` and `config/demo-users.json`
+> (products, prices, tax rate, APRs, service-area ZIPs, multipliers, demo logins) is a made-up example.
+> **Replace them with real values before go-live** (see the [go-live checklist](#go-live-checklist)).
+
+## Hard rules this project follows
+
+| Rule | How |
+|---|---|
+| No database | JSON config files, signed JWT price locks, in-memory demo orders |
+| Node + Express, plain HTML/CSS/JS | `/server` (Express 5) and `/public` (no framework, no build step) |
+| Prices only computed on the server | `server/services/pricing.js`; strict zod schemas reject any client-sent price |
+| Every external system behind an adapter | `server/adapters/*` each have a `mock` and `live` implementation chosen by env var |
+
+> **Note on `app/` and `next`:** the sandbox this was built in runs `next typegen` as a validation step, which needs an
+> `app/` folder and the `next` package. They are an inert shim: **nothing in this project uses Next.js**.
+> In your own repo you can delete `app/`, uninstall `next`, and drop that check.
 
 ## Quick start
 
-Two ways to run the **same** Express application:
+```bash
+npm install
+cp .env.example .env          # optional - works with defaults (mock everything)
+npm start                      # http://localhost:3000   (npm run dev = auto-restart)
+npm test                       # 25 tests: pricing, tokens, security
+npm run build                  # validates config JSON, syntax-checks JS, enforces the no-inline-script CSP rule
+```
 
-| Mode | Command | URL | Notes |
-| --- | --- | --- | --- |
-| Standalone (recommended for Docker/Render/Railway) | `node server/index.js` | http://localhost:4000 | Express serves `/public` + `/api` itself, with helmet CSP |
-| Hosted (this sandbox / Next.js platform) | `npm run build && npm start` | http://localhost:3000 | `pages/api/[[...all]].js` mounts the Express app; CSP comes from `next.config.ts` |
-
-First time: `cp .env.example .env` and fill in at least `JWT_SECRET`, `LOCK_SECRET`, `CSRF_SECRET` (any random hex works: `node -e "console.log(require('crypto').randomBytes(48).toString('hex'))"`).
-
-**Demo logins** (all password `Demo@123`): `homeowner@demo.com` → `/quote` · `sales@demo.com` → `/sales` · `admin@demo.com` → `/admin`.
-
-**Run the tests:** `node --test tests/*.test.js` — 39 tests covering pricing math, price-tampering, token expiry, CSRF, role guards, rate limiting, webhook spoofing and replay, and bad address input.
+Demo logins (password `Demo@123`): `homeowner@demo.com` → `/quote`, `sales@demo.com` → `/sales`, `admin@demo.com` → `/admin`.
+On `/login`, the **Demo as…** buttons autofill these (hidden when `DEMO_AUTOFILL=false`).
 
 ## Architecture
 
 ```
-config/                  # NO DATABASE — versioned JSON is the source of truth
-  catalog.json           #   3 brands × 3 tiers, 8 add-ons        (PLACEHOLDER DATA)
-  pricing-rules.json     #   tax, deposit %, lock days, terms,    (PLACEHOLDER DATA)
-                         #   service-area ZIPs, home-size multipliers, tonnage deltas
-  demo-users.json        #   bcrypt-hashed demo accounts
 server/
-  app.js                 # Express assembly (used by BOTH run modes)
-  index.js               # Standalone entry (node server/index.js)
-  configStore.js         # JSON config loader/cache + adapter mode selection
-  schemas.js             # zod schemas — strict validation of every input
-  securityHeaders.js     # shared CSP (mirrored in next.config.ts)
-  logger.js              # JSON logs with PII/JWT redaction
-  middleware/            # auth (JWT session cookie), csrf (HMAC of session),
-                         # rateLimit (in-memory buckets), validate (zod)
+  index.js            boot + graceful shutdown
+  app.js              middleware order, routes, role-gated pages
+  config.js           env parsing (secrets are derived/validated here)
+  routes/             public (config, catalog, address) · auth · quote (quote, lock, verify, financing) · payment (+webhook) · staff (sales, admin)
   services/
-    pricing.js           # THE ONLY place prices are computed
-    quoteLock.js         # signed, expiring JWT price locks (LOCK_SECRET)
-    store.js             # in-memory orders + audit log + webhook idempotency
-    retryQueue.js        # exponential-backoff queue for integration jobs
-    integrations.js      # CRM/email/SMS fan-out on lock & payment
-  adapters/              # every external system: mock + live, chosen by env var
-    payments.js          #   mock card gateway | Stripe Checkout + webhook
-    financing.js         #   mock lender | LiveFinancing stub (interface ready)
-    crm.js               #   mock | HubSpot
-    email.js             #   mock | SendGrid
-    sms.js               #   mock | Twilio
-    address.js           #   mock suggestions | Google Places (area check always local)
-  routes/                # auth, catalog, quote, payments, financing, orders,
-                         # admin, address, misc (health + app-config)
-pages/api/[[...all]].js  # Next.js host adapter (only used by `npm start`)
-public/                  # plain HTML/CSS/JS frontend — no framework, no build
-  login.html  quote.html  sales.html  admin.html  verify.html  payment-success.html
-  assets/css/app.css     # design system (white, one arctic-blue accent, mobile-first)
-  assets/js/*.js         # ES modules; shared.js = API client + icons + chrome
-tests/                   # node:test — no extra dependencies
-docs/                    # DEPLOYMENT.md (Render/Railway/Docker) · QA.md (manual script)
-Dockerfile               # standalone Express production image
+    pricing.js        THE pricing engine (cents, tax, deposit, amortization, budget fit)
+    schemas.js        zod schemas for requests and for the config files
+    tokens.js         price-lock + session JWTs (separate secrets AND audiences)
+    orders.js         in-memory orders  ← replace with DB
+    audit.js          in-memory audit log ← replace with DB
+    configStore.js    reads/writes /config/*.json ← replace with DB
+    paymentEvents.js  single idempotent "payment succeeded" handler
+    integrations.js   what happens on lock / payment (CRM, email, SMS) via the queue
+    queue.js          in-memory retry queue, exponential backoff + failure log ← replace with durable queue
+    logger.js         JSON logs with PII redaction
+  adapters/           payments · financing · crm · notifications · address (+ index.js registry)
+  middleware/         security (helmet/CSP) · csrf · rateLimits · auth (requireRole) · errorHandler
+public/               static frontend: index, login, quote (wizard), success, verify, pay/mock, sales, admin
+config/               catalog.json · pricing-rules.json · demo-users.json
+tests/                node:test suites
 ```
 
-**Server-side pricing, always.** The browser sends IDs and quantities only. `POST /api/quote`, `POST /api/quote/lock` and `POST /api/payments/deposit` all recompute money from `config/*.json` on the server. The deposit amount comes out of the *signed lock token*, never the request body.
+### Request flow
 
-## Pricing math (server/services/pricing.js)
+1. `POST /api/quote` — client sends **choices** (ids, ZIP, term). Server validates (zod `strictObject`), calculates, returns an itemised quote in cents.
+2. `POST /api/quote/lock` — server recomputes, runs financing pre-qual (if financing), creates the order, signs a JWT (`aud=price-lock`, 7-day `exp`, `jti=ref`) and queues CRM + email/SMS.
+3. `POST /api/payment/session {token}` — verify token → server derives the deposit from the signed total → adapter creates session (mock card form or Stripe Checkout). **No amount is ever accepted from the client.**
+4. Success page → `GET /api/payment/confirm` and/or the Stripe webhook → `paymentEvents.handleEvent` marks the order paid (idempotent, amount re-checked) and queues CRM stage update + receipts.
+5. `GET /api/quote/verify?token=` — anyone with the link can verify signature, expiry and paid status. Tokens contain no personal data.
 
-```
-systemPrice  = (baseInstalledPrice + tonnageDelta) × homeSizeMultiplier
-subtotal     = systemPrice + Σ addOns
-tax          = subtotal × taxRate                    (8.25% placeholder)
-total        = subtotal + tax
-deposit      = total × depositPercent                (10% placeholder)
-financing    = standard amortization of (total − deposit) at the term APR:
-               M = P·r / (1 − (1+r)^−n),  r = APR/12 (0% APR → P/n)
-```
+### API summary
 
-## Price locks
+| Method & path | Auth | Purpose |
+|---|---|---|
+| `GET /health`, `/api/health` | – | health check |
+| `GET /api/config` | – | safe flags (demo mode, current user) |
+| `GET /api/catalog?budget&budgetType&homeSize` | – | catalog + server-computed estimate & budget fit |
+| `GET /api/address/suggest?q` · `/details?id` · `/check?zip` | – | address lookup + service-area check |
+| `POST /api/quote` · `/api/quote/lock` · `/api/financing/prequalify` | – | pricing, lock, financing decision |
+| `GET /api/quote/verify?token=` | – | verify a lock |
+| `POST /api/payment/session` · `GET /api/payment/confirm` | – (token / session id) | deposit |
+| `POST /api/webhooks/stripe` | signature | payment webhook (raw body) |
+| `POST /api/auth/login` · `/logout` · `GET /api/auth/me` | – / cookie | session |
+| `GET /api/sales/orders[.csv]` · `/orders/:ref` | sales, admin | dashboard |
+| `GET/PUT /api/admin/config,catalog,pricing` · `adapters` · `audit` · `queue` · `outbox` | admin | admin |
 
-`POST /api/quote/lock` re-computes the quote, then signs it with `LOCK_SECRET` into a JWT that expires after `pricing-rules.priceLockDays` (7). `GET /api/quote/verify?token=…` is public and validates signature + expiry — it's the link emailed to the customer (`/verify`). Tampered → `401 LOCK_INVALID`; expired → `410 LOCK_EXPIRED`. Sessions use a **different** secret (`JWT_SECRET`), so neither token can forge the other.
+## Environment variables
 
-## Adapters — mock ↔ live
+See [`.env.example`](.env.example) — every variable is documented there. Key ones:
 
-| Domain | Env var | Mock behavior | Live provider | Required env for live |
-| --- | --- | --- | --- | --- |
-| Payments | `PAYMENTS_ADAPTER` | Test-card gateway (below) | Stripe Checkout + webhook | `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET` |
-| Financing | `FINANCING_ADAPTER` | Rule-based approve/review/decline | Stub — interface ready (`prequalify`, `getOffer`, `getTerms`) | lender integration TBD |
-| CRM | `CRM_ADAPTER` | Logs contact/deal create + stage change | HubSpot v3 | `HUBSPOT_ACCESS_TOKEN` |
-| Email | `EMAIL_ADAPTER` | Logs messages | SendGrid | `SENDGRID_API_KEY`, `SENDGRID_FROM` |
-| SMS | `SMS_ADAPTER` | Logs messages | Twilio | `TWILIO_ACCOUNT_SID`, `TWILIO_AUTH_TOKEN`, `TWILIO_FROM_NUMBER` |
-| Address | `ADDRESS_ADAPTER` | Synthetic suggestions in service ZIPs | Google Places Autocomplete | `GOOGLE_PLACES_API_KEY` |
+| Var | Purpose |
+|---|---|
+| `JWT_SECRET` (≥32 chars), `LOCK_TOKEN_SECRET` | signing secrets. Missing ⇒ ephemeral random secret (sessions/locks reset on restart); `REQUIRE_SECRETS=true` makes it a hard error |
+| `DEMO_AUTOFILL` | `true` shows demo autofill buttons + banner; **`false` in production** |
+| `PAYMENTS_MODE`, `FINANCING_MODE`, `CRM_MODE`, `NOTIFY_MODE`, `ADDRESS_MODE` | `mock` \| `live` |
+| `APP_URL` | public https URL used in emails and Stripe redirects |
+| `TRUST_PROXY`, `FORCE_HTTPS`, `COOKIE_SECURE` | production-behind-proxy settings |
 
-Toggling: set the env var (source of truth), or flip at runtime from **Admin → Integrations** (in-memory override, resets on restart, blocked if the live keys are missing). Failed integration calls run through the **retry queue** (2s→4s→8s…, 5 attempts) and land in the audit log as `INTEGRATION_FAILED` — they never block a customer.
+## Switching adapters from mock to live
 
-### Mock payment test cards
+Set the env var and the credentials, restart (or use **Admin → Integrations**, which refuses to switch until credentials exist; runtime toggles reset on restart).
 
-| Card | Result |
-| --- | --- |
-| `4242 4242 4242 4242` | Approved |
-| `4000 0000 0000 0002` | Declined (generic) |
-| `4000 0000 0000 9995` | Declined (insufficient funds) |
+| Adapter | Env var | Required credentials | Notes |
+|---|---|---|---|
+| Payments | `PAYMENTS_MODE=live` | `STRIPE_SECRET_KEY` (`sk_test_…`), `STRIPE_WEBHOOK_SECRET` | Stripe Checkout, test mode. `sk_live_` keys are refused unless `STRIPE_ALLOW_LIVE_KEYS=true` |
+| Financing | `FINANCING_MODE=live` | `FINANCING_API_URL`, `FINANCING_API_KEY` | `adapters/financing.js` `live` is a generic REST skeleton (`/prequalify`, `/offers`, `/terms`) - adapt to your lender |
+| CRM | `CRM_MODE=live` | `HUBSPOT_ACCESS_TOKEN` (+ optional `HUBSPOT_PIPELINE`, `HUBSPOT_STAGE_LOCKED`, `HUBSPOT_STAGE_PAID`) | creates contact + deal on lock, moves stage on payment |
+| Email / SMS | `NOTIFY_MODE=live` | `SENDGRID_API_KEY`, `SENDGRID_FROM_EMAIL` (+ Twilio trio for SMS) | verified sender required in SendGrid |
+| Address | `ADDRESS_MODE=live` | `GOOGLE_PLACES_API_KEY` | Places API (New); called server-side so the key never reaches the browser |
 
-### Stripe live mode
+**Adapter interfaces** (each `mock` and `live` implement the same functions): see the header comment in each `server/adapters/*.js`.
 
-1. Set `PAYMENTS_ADAPTER=live`, `STRIPE_SECRET_KEY=sk_test_…` and `APP_BASE_URL=https://your-domain`.
-2. Webhook: `stripe listen --forward-to https://your-domain/api/payments/webhook` (or add the endpoint in the Dashboard for `checkout.session.completed`) and set `STRIPE_WEBHOOK_SECRET=whsec_…`.
-3. The webhook verifies the `stripe-signature` header against the **raw** body and is idempotent (processed event IDs are remembered; replays return `{received:true, duplicate:true}`). `/payment/success` re-checks the session server-side as a UX convenience — the webhook is authoritative.
-4. Use Stripe's [test cards](https://stripe.com/docs/testing) in test mode. The client never sends an amount; the deposit is read from the signed lock token.
+### Stripe test mode & webhook setup
 
-## Security (Step 9 checklist)
+1. Create a Stripe account → Developers → API keys → copy the **test** secret key to `STRIPE_SECRET_KEY`.
+2. Local webhooks: `stripe listen --forward-to localhost:3000/api/webhooks/stripe` → copy the printed `whsec_…` to `STRIPE_WEBHOOK_SECRET`.
+3. Deployed webhooks: Developers → Webhooks → add endpoint `https://YOUR_DOMAIN/api/webhooks/stripe`, event `checkout.session.completed`, copy the signing secret.
+4. Set `PAYMENTS_MODE=live`, `APP_URL=https://YOUR_DOMAIN` (or `http://localhost:3000`), restart.
 
-- Rate limiting on all `/api` (600/5 min/IP), stricter on login (10/5 min) and quote endpoints (60/5 min). Buckets in-memory — replace with Redis for multi-instance.
-- Session: signed JWT in `httpOnly`, `sameSite=lax` cookie; `secure` auto-set behind TLS (`trust proxy` is on). CSRF: HMAC-of-session token required as `X-CSRF-Token` on every cookie-authenticated mutation (login + webhook exempt).
-- Strict CSP (`default-src 'self'`, no inline scripts/styles), `X-Frame-Options: DENY`, `nosniff`, `Referrer-Policy`, `Permissions-Policy` — via `next.config.ts` (hosted) or helmet (standalone).
-- zod validation on every body/query; unknown catalog IDs rejected with 422; CSV export escapes formula-injection; all UI rendering via `textContent`/`escapeHtml`.
-- Logs are JSON with PII (email, card, tokens, passwords) and JWT-shaped strings redacted; audit log records logins, locks, payments, financing decisions, admin edits, webhook rejections.
-- Secrets only in `.env` (git-ignored); nothing secret is shipped to the browser. `.env.example` documents every variable.
-- `npm audit`: 0 high/critical. 4 moderate remain in **dev-only** tooling (`eslint` → minimatch/@humanfs, `drizzle-kit` → esbuild); none ship in the production runtime.
+Test cards: `4242 4242 4242 4242` (success) · `4000 0000 0000 0002` (declined) · `4000 0025 0000 3155` (3-D Secure) · `4000 0000 0000 9995` (insufficient funds). Any future expiry, any CVC, any ZIP.
+The mock card form supports `4242…`, `4000 0000 0000 0002` and `4000 0000 0000 9995`.
 
-## Adding a real database later (Step 10)
+Webhook safety: signature verified on the raw body; events de-duplicated by id; amount re-derived and compared; unknown orders ignored. In mock mode the webhook accepts an HMAC (`x-mock-signature`) keyed with a secret derived from `JWT_SECRET`.
 
-The code is organized so a database replaces exactly these modules — no route or UI changes:
+## Security measures
 
-1. **`server/services/store.js`** — swap Maps/arrays for tables: `orders`, `audit_log`, `webhook_events` (idempotency). Keep the exported function signatures.
-2. **`server/configStore.js` → `getDemoUsers()`** — replace `config/demo-users.json` with a `users` table (keep bcrypt hashes). Catalog/pricing can stay as JSON or move to tables behind the same getters.
-3. **`server/middleware/rateLimit.js`** — move buckets to Redis for multi-instance deployments.
-4. **`server/services/retryQueue.js`** — persist jobs (table or a queue like BullMQ) so retries survive restarts.
-5. **`server/configStore.js` adapter overrides** — persist runtime toggles if you keep that feature.
-6. **`server/middleware/auth.js`** — JWT sessions can stay stateless; add a `sessions`/`refresh_tokens` table only if you need revocation.
+Rate limits on all `/api` (stricter: login, quote, lock) · per-account login lockout · signed double-submit CSRF + Origin check ·
+strict CSP (no inline script/style, same-origin only) via helmet · zod strict validation everywhere · DOM built with `textContent` (never `innerHTML` with data) ·
+CSV formula-injection neutralised · bcrypt passwords · httpOnly + SameSite cookies · lock/session tokens use separate secrets and audiences ·
+PII-redacting logger (no bodies, queries or headers logged) · in-memory audit log of locks, payments, webhook rejections, admin edits and logins ·
+`.env` is git-ignored · `npm audit` is clean.
+Tests in `tests/security.test.js` cover price tampering, token replay, webhook spoofing, brute-force login, bad address input, CSRF, RBAC, CSV injection, and client-code secret scanning.
 
-## Go-live checklist
+## Replacing modules when you add a real database
 
-- [ ] Replace placeholder data in `config/catalog.json` + `config/pricing-rules.json` with real pricing.
-- [ ] Replace `config/demo-users.json` with a real identity store; remove the "Demo as…" buttons (`DEMO_AUTOFILL=false`) and the banner (`DEMO_BANNER=false`).
-- [ ] Rotate `JWT_SECRET`, `LOCK_SECRET`, `CSRF_SECRET` (any rotation invalidates outstanding sessions/locks — expected).
-- [ ] Set `APP_BASE_URL` to the public HTTPS origin; confirm `secure` cookies behind the platform TLS proxy.
-- [ ] Switch adapters to `live` as credentials arrive (payments last, after webhook testing in Stripe test mode).
-- [ ] Run `node --test tests/*.test.js` and the manual script in `docs/QA.md`.
-- [ ] Re-run `npm audit` after any dependency change.
+| Module | Replace with |
+|---|---|
+| `server/services/orders.js` | `orders` table (ref PK, status, quote JSON, customer, payment, crm ids). Keep the exported function names |
+| `server/services/audit.js` | `audit_log` table (append-only) |
+| `server/services/configStore.js` | `catalog`/`pricing` tables or versioned JSON rows; keep `getContext()`, `update()` |
+| `server/services/queue.js` | durable queue (BullMQ/SQS/pg-boss) with the same `enqueue(name, fn, opts)` API |
+| `server/routes/auth.js` (`USERS`) + `config/demo-users.json` | real users table / identity provider; keep `tokens.signSession` + `requireRole` |
+| `server/services/paymentEvents.js` `processed` Set | `processed_events` table (unique event id) |
+| `server/routes/auth.js` `failures` Map, rate limiter stores | shared store (Redis) if you run more than one instance |
+| `adapters/payments.js` mock `sessions` Map | not needed in live mode |
 
-## Docs
+Everything else (pricing, tokens, schemas, adapters, middleware, frontend) is storage-agnostic.
 
-- `docs/DEPLOYMENT.md` — Dockerfile, Render/Railway guides, HTTPS/domain notes, production env checklist.
-- `docs/QA.md` — manual QA script covering the full flow for all three roles.
+## Known limitations (by design for the demo)
 
-## Design system — "Linen"
+- Orders, audit log, queue and sessions of the mock card form live in memory: **restart = data loss**, and you can only run **one instance**.
+  A valid price-lock token can still be verified and paid after a restart (the order is rebuilt from the signed token, without customer details).
+- Admin edits write to `/config/*.json`; on platforms with ephemeral disks they are lost on redeploy. Commit changes to git or add a volume.
+- No SSN/credit data is collected. A real lender flow should hand off to the lender's hosted application.
 
-Built to the client's reference: cream app screens resting on peach linen.
+## More docs
 
-- **Layout:** homeowner screens (`/login`, `/quote`, `/verify`, `/payment/success`) render inside a phone frame on desktop/tablet and go full-screen (with safe-area insets) on real phones. Staff dashboards (`/sales`, `/admin`) use a wide cream panel on the same linen.
-- **Anatomy of every screen:** shield-and-lock logo with a two-line serif wordmark (top-left) · centered title with a thin progress line · two-line hamburger (opens a slide-down menu) · sand "pill" badge · large rounded card with a serif question · soft neumorphic **orb** as the primary action · one line of microcopy underneath.
-- **Type:** Source Serif 4 (headings, prices) + DM Sans (UI), both self-hosted variable fonts (SIL OFL).
-- **Palette:** cream `#FCF1EA`, sand `#F5E5DA`, taupe `#C2A592`, espresso ink `#2A1E18`; sage / honey / clay for status only.
-- **Motion:** directional step transitions, staggered reveals, breathing orb halo, sliding segmented thumbs, number morphs and count-ups, ripple + haptic taps, live card preview that flips for the CVC, and a warm confetti burst on confirmation. Everything honours `prefers-reduced-motion`.
-- **CSP-safe:** no inline `style` attributes anywhere; dynamic values are set through CSSOM only.
-
-## Media credits
-
-`public/assets/media/linen.jpg` is an AI-generated linen texture created for this project. The fonts are open-source (SIL Open Font License).
+- [`docs/DEPLOYMENT.md`](docs/DEPLOYMENT.md) – Docker, Render, Railway, HTTPS/domain, production env checklist, go-live checklist
+- [`docs/QA.md`](docs/QA.md) – manual QA script for all three roles

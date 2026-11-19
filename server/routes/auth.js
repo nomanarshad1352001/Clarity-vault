@@ -1,53 +1,69 @@
 'use strict';
 const express = require('express');
 const bcrypt = require('bcryptjs');
-const { validate } = require('../middleware/validate');
-const { loginSchema } = require('../schemas');
-const { loginLimiter } = require('../middleware/rateLimit');
-const { signSession, setSessionCookie, clearSessionCookie, roleHome } = require('../middleware/auth');
-const { tokenForSession } = require('../middleware/csrf');
-const { AppError, asyncWrap } = require('../errors');
-const configStore = require('../configStore');
-const store = require('../services/store');
+const fs = require('fs');
+const path = require('path');
+const config = require('../config');
+const tokens = require('../services/tokens');
+const audit = require('../services/audit');
+const { loginSchema } = require('../services/schemas');
+const { wrap } = require('../middleware/errorHandler');
+const { HOME } = require('../middleware/auth');
 
-const router = express.Router();
+const USERS = JSON.parse(fs.readFileSync(path.join(__dirname, '..', '..', 'config', 'demo-users.json'), 'utf8')).users;
+const DUMMY_HASH = bcrypt.hashSync('not-a-real-password', 10); // equalises timing for unknown emails
 
-router.post(
-  '/login',
-  loginLimiter,
-  validate(loginSchema),
-  asyncWrap(async (req, res) => {
-    const { email, password } = req.body;
-    const user = configStore.getDemoUsers().find((u) => u.email === email);
-    const ok = user ? await bcrypt.compare(password, user.passwordHash) : false;
-    if (!ok) {
-      store.addAudit({ type: 'LOGIN_FAILED', actor: 'anonymous', summary: 'Failed sign-in attempt', meta: { email } });
-      throw new AppError(401, 'INVALID_CREDENTIALS', 'Email or password is incorrect.');
+// Per-account lockout (defends against distributed brute force that rotates IPs).
+const failures = new Map();
+const LOCK_MS = 15 * 60_000;
+
+function lockedUntil(email) {
+  const f = failures.get(email);
+  return f && f.until && f.until > Date.now() ? f.until : 0;
+}
+function recordFailure(email) {
+  const f = failures.get(email) || { count: 0, until: 0 };
+  if (f.until && f.until <= Date.now()) { f.count = 0; f.until = 0; }
+  f.count++;
+  if (f.count >= config.rate.loginLockoutAfter) f.until = Date.now() + LOCK_MS;
+  failures.set(email, f);
+}
+
+const cookieOpts = () => ({ httpOnly: true, sameSite: 'lax', secure: config.cookieSecure, path: '/', maxAge: config.sessionHours * 3600_000 });
+
+function createAuthRouter({ loginLimiter }) {
+  const router = express.Router();
+
+  router.post('/login', loginLimiter, wrap(async (req, res) => {
+    const { email, password } = loginSchema.parse(req.body);
+    if (lockedUntil(email)) {
+      audit.record('login_locked', email, null, {});
+      return res.status(429).json({ error: 'account_locked', message: 'Too many failed attempts. Try again in 15 minutes.' });
     }
-    const token = signSession(user);
-    setSessionCookie(req, res, token);
-    store.addAudit({ type: 'LOGIN', actor: user.email, summary: `${user.role} signed in` });
-    res.json({
-      user: { email: user.email, name: user.name, role: user.role },
-      csrfToken: tokenForSession(token),
-      redirect: roleHome(user.role),
-    });
-  })
-);
+    const user = USERS.find((u) => u.email === email);
+    const ok = await bcrypt.compare(password, user ? user.passwordHash : DUMMY_HASH);
+    if (!user || !ok) {
+      recordFailure(email);
+      audit.record('login_failed', email, null, {});
+      return res.status(401).json({ error: 'invalid_credentials', message: 'Incorrect email or password.' });
+    }
+    failures.delete(email);
+    res.cookie('session', tokens.signSession(user), cookieOpts());
+    audit.record('login', user.email, null, { role: user.role });
+    res.json({ user: { email: user.email, name: user.name, role: user.role }, redirect: HOME[user.role] });
+  }));
 
-router.post('/logout', (req, res) => {
-  clearSessionCookie(res);
-  res.json({ ok: true });
-});
-
-router.get('/me', (req, res) => {
-  if (!req.user) {
-    return res.status(401).json({ error: { code: 'AUTH_REQUIRED', message: 'Not signed in.' } });
-  }
-  return res.json({
-    user: { email: req.user.email, name: req.user.name, role: req.user.role },
-    csrfToken: tokenForSession(req.sessionToken),
+  router.post('/logout', (req, res) => {
+    res.clearCookie('session', { path: '/', httpOnly: true, sameSite: 'lax', secure: config.cookieSecure });
+    res.json({ ok: true });
   });
-});
 
-module.exports = router;
+  router.get('/me', (req, res) => {
+    if (!req.user) return res.status(401).json({ error: 'unauthenticated', message: 'Not signed in.' });
+    res.json({ user: { email: req.user.email, name: req.user.name, role: req.user.role } });
+  });
+
+  return router;
+}
+
+module.exports = { createAuthRouter, resetLockouts: () => failures.clear() };

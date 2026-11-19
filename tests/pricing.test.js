@@ -1,102 +1,107 @@
 'use strict';
-/**
- * Unit tests for the server-side pricing engine.
- * All expectations derive from config/pricing-rules.json + config/catalog.json.
- */
+const { start, client, goodQuote } = require('./helpers');
 const test = require('node:test');
 const assert = require('node:assert/strict');
-
+const jwt = require('jsonwebtoken');
 const pricing = require('../server/services/pricing');
+const tokens = require('../server/services/tokens');
+const configStore = require('../server/services/configStore');
+const config = require('../server/config');
 
-const BASE = {
-  address: '100 Maple Ave',
-  zip: '75201', // inside service area
-  homeSqft: 2000, // multiplier 1.0
-  systemId: 'goodman-good', // base 5495
-  tonnageTons: 2.5, // delta 0
-  addOnIds: [],
-  paymentMethod: 'full',
-  termMonths: null,
-  budget: null,
-};
+const ctx = configStore.getContext();
+const base = { budget: 9000, budgetType: 'total', address: '1 A St', zip: '78701', systemId: 'goodman-good', addOnIds: [], paymentMethod: 'full' };
 
-test('base quote: subtotal, tax (8.25%), total, 10% deposit', () => {
-  const q = pricing.computeQuote({ ...BASE });
-  assert.equal(q.system.price, 5495);
-  assert.equal(q.subtotal, 5495);
-  assert.equal(q.tax, 453.34); // 5495 * 0.0825 = 453.3375
-  assert.equal(q.total, 5948.34);
-  assert.equal(q.deposit, 594.83); // 10%
+test('amortization matches the standard formula', () => {
+  // $10,000 @ 12% APR over 12 months => $888.49/month
+  assert.equal(pricing.monthlyPaymentCents(1_000_000, 12, 12), 88849);
+  assert.equal(pricing.monthlyPaymentCents(120_000, 0, 12), 10_000); // 0% APR
+  assert.equal(pricing.monthlyPaymentCents(0, 9, 36), 0);
 });
 
-test('add-ons are summed into subtotal before tax', () => {
-  const q = pricing.computeQuote({ ...BASE, addOnIds: ['smart-thermostat', 'new-pad'] });
-  assert.equal(q.addOnsTotal, 349 + 225);
-  assert.equal(q.subtotal, 5495 + 574);
-  assert.equal(q.total, pricing.round2((5495 + 574) * 1.0825));
+test('quote totals: base + adjustments + add-ons, tax, deposit, balance', () => {
+  const q = pricing.calculateQuote({ ...base, addOnIds: ['smart-thermostat', 'new-pad'] }, ctx);
+  const expectedSubtotal = q.items.reduce((s, i) => s + i.amountCents, 0);
+  assert.equal(q.subtotalCents, expectedSubtotal);
+  assert.equal(q.taxCents, Math.round((expectedSubtotal * ctx.rules.taxRatePercent) / 100));
+  assert.equal(q.totalCents, q.subtotalCents + q.taxCents);
+  assert.equal(q.depositCents, Math.round((q.totalCents * ctx.rules.depositPercent) / 100));
+  assert.equal(q.balanceCents, q.totalCents - q.depositCents);
+  assert.equal(q.addOnsCents, 28900 + 39500);
+  assert.equal(q.financingOptions.length, ctx.rules.financingTerms.length);
 });
 
-test('duplicate add-on ids are deduplicated', () => {
-  const q = pricing.computeQuote({ ...BASE, addOnIds: ['new-pad', 'new-pad', 'new-pad'] });
-  assert.equal(q.addOnsTotal, 225);
+test('financing payment is computed from the balance and the term APR', () => {
+  const q = pricing.calculateQuote({ ...base, paymentMethod: 'financing', termMonths: 36 }, ctx);
+  const apr = ctx.rules.financingTerms.find((t) => t.months === 36).aprPercent;
+  assert.equal(q.financing.monthlyPaymentCents, pricing.monthlyPaymentCents(q.balanceCents, apr, 36));
 });
 
-test('home-size multiplier applies (4500 sqft → 1.22×)', () => {
-  const q = pricing.computeQuote({ ...BASE, homeSqft: 4500 });
-  assert.equal(q.system.price, pricing.round2(5495 * 1.22));
+test('wrong IDs and bad business input are rejected by the pricing engine', () => {
+  assert.throws(() => pricing.calculateQuote({ ...base, systemId: 'nope' }, ctx), { code: 'unknown_system' });
+  assert.throws(() => pricing.calculateQuote({ ...base, addOnIds: ['nope'] }, ctx), { code: 'unknown_addon' });
+  assert.throws(() => pricing.calculateQuote({ ...base, addOnIds: ['new-pad', 'new-pad'] }, ctx), { code: 'unknown_addon' });
+  assert.throws(() => pricing.calculateQuote({ ...base, zip: '90210' }, ctx), { code: 'outside_service_area' });
+  assert.throws(() => pricing.calculateQuote({ ...base, tonnage: 9 }, ctx), { code: 'bad_tonnage' });
+  assert.throws(() => pricing.calculateQuote({ ...base, paymentMethod: 'financing', termMonths: 7 }, ctx), { code: 'bad_term' });
 });
 
-test('tonnage delta applies (5 tons → +$1500)', () => {
-  const q = pricing.computeQuote({ ...BASE, tonnageTons: 5 });
-  assert.equal(q.system.price, 5495 + 1500);
+// ---------------------------------------------------------------- tokens
+const payload = () => ({ ref: 'AC-ABCDEFGH', quote: pricing.calculateQuote(base, ctx), financing: null });
+
+test('valid lock token round-trips', () => {
+  const t = tokens.signLock(payload(), { expiresInSec: 60 });
+  const p = tokens.verifyLock(t);
+  assert.equal(p.ref, 'AC-ABCDEFGH');
+  assert.ok(p.exp - p.iat === 60);
 });
 
-test('unknown system id is rejected', () => {
-  assert.throws(() => pricing.computeQuote({ ...BASE, systemId: 'acme-9000' }), /Unknown system/);
+test('tampered token is rejected', () => {
+  const t = tokens.signLock(payload(), { expiresInSec: 60 });
+  const [h, b, s] = t.split('.');
+  const body = JSON.parse(Buffer.from(b, 'base64url').toString());
+  body.quote.totalCents = 1; // attacker lowers the price
+  const forged = `${h}.${Buffer.from(JSON.stringify(body)).toString('base64url')}.${s}`;
+  assert.throws(() => tokens.verifyLock(forged), { code: 'invalid' });
+  assert.throws(() => tokens.verifyLock(`${t}x`), { code: 'invalid' });
 });
 
-test('unknown add-on id is rejected', () => {
-  assert.throws(() => pricing.computeQuote({ ...BASE, addOnIds: ['gold-plated-ducts'] }), /Unknown add-on/);
+test('token signed with the wrong secret, "none" algorithm, or wrong audience is rejected', () => {
+  const p = payload();
+  const wrongSecret = jwt.sign(p, 'another-secret-another-secret-another-secret', { audience: 'price-lock', issuer: 'ac-quote', jwtid: p.ref, expiresIn: 60 });
+  assert.throws(() => tokens.verifyLock(wrongSecret), { code: 'invalid' });
+  const none = `${Buffer.from('{"alg":"none","typ":"JWT"}').toString('base64url')}.${Buffer.from(JSON.stringify({ ...p, jti: p.ref, aud: 'price-lock', iss: 'ac-quote', exp: 9999999999 })).toString('base64url')}.`;
+  assert.throws(() => tokens.verifyLock(none), { code: 'invalid' });
+  const wrongAud = jwt.sign(p, config.secrets.lock, { audience: 'session', issuer: 'ac-quote', jwtid: p.ref, expiresIn: 60 });
+  assert.throws(() => tokens.verifyLock(wrongAud), { code: 'invalid' });
 });
 
-test('tonnage not offered by the system is rejected', () => {
-  assert.throws(() => pricing.computeQuote({ ...BASE, systemId: 'goodman-best', tonnageTons: 1.5 }), /tonnage/i);
+test('expired token is rejected', () => {
+  const t = tokens.signLock(payload(), { expiresInSec: -10 });
+  assert.throws(() => tokens.verifyLock(t), { code: 'expired' });
 });
 
-test('zip outside the service area is rejected', () => {
-  assert.throws(() => pricing.computeQuote({ ...BASE, zip: '90210' }), /not serving|not in|service/i);
+test('token with a mismatched ref/jti or malformed ref is rejected', () => {
+  const p = payload();
+  const bad = jwt.sign({ ...p, ref: 'AC-12345678' }, config.secrets.lock, { audience: 'price-lock', issuer: 'ac-quote', jwtid: 'AC-ABCDEFGH', expiresIn: 60 });
+  assert.throws(() => tokens.verifyLock(bad), { code: 'invalid' });
+  const bad2 = jwt.sign({ ...p, ref: 'nope' }, config.secrets.lock, { audience: 'price-lock', issuer: 'ac-quote', jwtid: 'nope', expiresIn: 60 });
+  assert.throws(() => tokens.verifyLock(bad2), { code: 'invalid' });
 });
 
-test('invalid financing term is rejected', () => {
-  assert.throws(
-    () => pricing.computeQuote({ ...BASE, paymentMethod: 'financing', termMonths: 48 }),
-    /term/i
-  );
-});
-
-test('financing: 12-month 0% APR is straight division of principal', () => {
-  const q = pricing.computeQuote({ ...BASE, paymentMethod: 'financing', termMonths: 12 });
-  const principal = pricing.round2(q.total - q.deposit);
-  assert.equal(q.financing.principal, principal);
-  assert.equal(q.financing.monthlyPayment, pricing.round2(principal / 12));
-  assert.ok(Math.abs(q.financing.totalInterest) <= 0.12, '0% APR should have ~zero interest (± monthly cent rounding)');
-});
-
-test('financing: 60-month amortization matches the standard formula', () => {
-  const q = pricing.computeQuote({ ...BASE, paymentMethod: 'financing', termMonths: 60 });
-  const r = 0.1099 / 12;
-  const expected = pricing.round2((q.financing.principal * r) / (1 - Math.pow(1 + r, -60)));
-  assert.equal(q.financing.monthlyPayment, expected);
-  assert.ok(q.financing.totalInterest > 0, 'interest should be positive at 10.99% APR');
-  assert.ok(
-    Math.abs(q.financing.totalOfPayments - (q.financing.monthlyPayment * 60 + q.deposit)) < 0.02,
-    'total of payments = monthly × months + deposit'
-  );
-});
-
-test('budget fit classification', () => {
-  const within = pricing.computeQuote({ ...BASE, budget: { type: 'total', amount: 10000 } });
-  const over = pricing.computeQuote({ ...BASE, systemId: 'trane-best', budget: { type: 'total', amount: 5000 } });
-  assert.equal(within.budgetFit, 'within');
-  assert.equal(over.budgetFit, 'over');
+// ---------------------------------------------------------------- HTTP
+test('POST /api/quote returns server-calculated prices and rejects client-supplied prices', async () => {
+  const srv = await start(); const c = client(srv.base);
+  try {
+    const ok = await c.post('/api/quote', goodQuote());
+    assert.equal(ok.status, 200);
+    assert.ok(ok.body.quote.totalCents > 0);
+    for (const extra of [{ totalCents: 1 }, { price: 1 }, { depositCents: 1 }, { basePrice: 1 }]) {
+      const r = await c.post('/api/quote', { ...goodQuote(), ...extra });
+      assert.equal(r.status, 400, `extra field ${Object.keys(extra)} must be rejected`);
+    }
+    assert.equal((await c.post('/api/quote', goodQuote({ systemId: 'bogus' }))).status, 422);
+    assert.equal((await c.post('/api/quote', goodQuote({ addOnIds: ['bogus'] }))).status, 422);
+    assert.equal((await c.post('/api/quote', goodQuote({ zip: '10001' }))).body.error, 'outside_service_area');
+    assert.equal((await c.post('/api/quote', goodQuote({ paymentMethod: 'financing' }))).status, 400); // term required
+  } finally { await srv.close(); }
 });

@@ -1,88 +1,66 @@
 'use strict';
-/**
- * app — assembles the Express application.
- *
- * Two ways to run the SAME app:
- *  1. Hosted (this sandbox): mounted by pages/api/[[...all]].js under Next.js.
- *     CSP/headers come from next.config.ts.
- *  2. Standalone (Docker/Render/Railway): `node server/index.js` — serves the
- *     /public frontend itself and applies helmet with the shared CSP.
- */
-const path = require('path');
 const express = require('express');
 const compression = require('compression');
 const cookieParser = require('cookie-parser');
-const helmet = require('helmet');
-const { attachUser } = require('./middleware/auth');
-const { csrfProtection } = require('./middleware/csrf');
-const { apiLimiter } = require('./middleware/rateLimit');
-const { notFoundApi, errorHandler } = require('./errors');
-const { CSP } = require('./securityHeaders');
+const path = require('path');
+const config = require('./config');
+const { securityHeaders, requestLogger, noStoreApi } = require('./middleware/security');
+const { createLimiters } = require('./middleware/rateLimits');
+const { csrf } = require('./middleware/csrf');
+const { attachUser, requireRolePage } = require('./middleware/auth');
+const { notFoundApi, errorHandler } = require('./middleware/errorHandler');
+const { createAuthRouter } = require('./routes/auth');
+const publicRoutes = require('./routes/public');
+const quoteRoutes = require('./routes/quote');
+const payment = require('./routes/payment');
+const staff = require('./routes/staff');
 
-function createApp({ standalone = false } = {}) {
+const PUBLIC = path.join(__dirname, '..', 'public');
+
+function createApp() {
   const app = express();
+  const limits = createLimiters();
+
   app.disable('x-powered-by');
-  app.set('trust proxy', 1);
+  if (config.trustProxy) app.set('trust proxy', config.trustProxy);
 
-  if (standalone) {
-    app.use(helmet({ contentSecurityPolicy: false, crossOriginEmbedderPolicy: false }));
-    // Apply our strict shared CSP (helmet's default is too loose for this app):
-    app.use((req, res, next) => {
-      res.setHeader('Content-Security-Policy', CSP);
-      next();
-    });
-  }
-
+  app.use(securityHeaders());
   app.use(compression());
 
-  // Stripe webhook needs the raw body BEFORE any JSON parsing (signature check).
-  app.use('/api/payments/webhook', express.raw({ type: 'application/json', limit: '256kb' }));
-  app.use(express.json({ limit: '100kb' }));
+  // Health check: before rate limits / logging so platform probes are never throttled.
+  const health = (req, res) => res.json({ status: 'ok', uptime: Math.round(process.uptime()), time: new Date().toISOString() });
+  app.get(['/health', '/api/health'], health);
+
+  app.use(requestLogger);
+
+  // Webhooks need the raw body, so they are mounted before express.json(). No cookies / CSRF here: authenticated by signature.
+  app.use('/api/webhooks', limits.webhook, payment.webhookRouter);
+
+  app.use(express.json({ limit: '50kb' }));
   app.use(cookieParser());
   app.use(attachUser);
 
-  app.use('/api', apiLimiter, csrfProtection);
+  app.use('/api', noStoreApi, limits.api, csrf);
+  app.get('/api/csrf', (req, res) => res.json({ token: req.cookies.csrf_token }));
 
-  app.use('/api', require('./routes/misc'));
-  app.use('/api/auth', require('./routes/auth'));
-  app.use('/api/catalog', require('./routes/catalog'));
-  app.use('/api/quote', require('./routes/quote'));
-  app.use('/api/payments', require('./routes/payments'));
-  app.use('/api/financing', require('./routes/financing'));
-  app.use('/api/orders', require('./routes/orders'));
-  app.use('/api/admin', require('./routes/admin'));
-  app.use('/api/address', require('./routes/address'));
+  app.use('/api/auth', createAuthRouter({ loginLimiter: limits.login }));
+  app.use('/api', publicRoutes);
+  app.use('/api/quote/lock', limits.lock);
+  app.use(['/api/quote', '/api/financing', '/api/payment'], limits.quote);
+  app.use('/api', quoteRoutes);
+  app.use('/api/payment', payment.router);
+  app.use('/api/sales', staff.sales);
+  app.use('/api/admin', staff.admin);
   app.use('/api', notFoundApi);
 
-  if (standalone) {
-    const publicDir = path.join(process.cwd(), 'public');
-    const pages = {
-      '/login': 'login.html',
-      '/quote': 'quote.html',
-      '/sales': 'sales.html',
-      '/admin': 'admin.html',
-      '/verify': 'verify.html',
-      '/payment/success': 'payment-success.html',
-    };
-    app.get('/', (req, res) => res.redirect('/login'));
-    for (const [route, file] of Object.entries(pages)) {
-      app.get(route, (req, res) => res.sendFile(path.join(publicDir, file)));
-    }
-    app.use(
-      express.static(publicDir, {
-        index: false,
-        setHeaders(res, filePath) {
-          if (filePath.endsWith('.html')) res.setHeader('Cache-Control', 'no-cache');
-          else res.setHeader('Cache-Control', 'public, max-age=3600');
-        },
-      })
-    );
-    app.use((req, res) => res.status(404).send('Not found'));
-  }
+  // Role-protected pages (the APIs behind them are independently protected).
+  app.get(['/sales', '/sales.html'], requireRolePage('sales', 'admin'), (req, res) => res.sendFile(path.join(PUBLIC, 'sales.html')));
+  app.get(['/admin', '/admin.html'], requireRolePage('admin'), (req, res) => res.sendFile(path.join(PUBLIC, 'admin.html')));
 
+  app.use(express.static(PUBLIC, { extensions: ['html'], maxAge: config.isProd ? '1h' : 0 }));
+  app.use((req, res) => res.status(404).sendFile(path.join(PUBLIC, '404.html')));
   app.use(errorHandler);
   return app;
 }
 
-module.exports = createApp();
-module.exports.createApp = createApp;
+module.exports = { createApp };

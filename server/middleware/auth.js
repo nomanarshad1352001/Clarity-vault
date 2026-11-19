@@ -1,82 +1,34 @@
 'use strict';
-/**
- * auth middleware — signed JWT session in an httpOnly, sameSite cookie.
- * Session payload: { sub, email, name, role }. No server-side session store.
- */
-const jwt = require('jsonwebtoken');
-const { AppError } = require('../errors');
+const tokens = require('../services/tokens');
 
-const COOKIE_NAME = process.env.SESSION_COOKIE_NAME || 'ad_session';
-const JWT_SECRET = process.env.JWT_SECRET || 'dev-only-insecure-secret';
-const SESSION_TTL = '8h';
-
-function signSession(user) {
-  return jwt.sign(
-    { sub: user.id, email: user.email, name: user.name, role: user.role },
-    JWT_SECRET,
-    { expiresIn: SESSION_TTL }
-  );
-}
-
-function setSessionCookie(req, res, token) {
-  const secure = req.secure || req.headers['x-forwarded-proto'] === 'https';
-  res.cookie(COOKIE_NAME, token, {
-    httpOnly: true,
-    sameSite: 'lax',
-    secure,
-    maxAge: 8 * 60 * 60 * 1000,
-    path: '/',
-  });
-}
-
-function clearSessionCookie(res) {
-  res.clearCookie(COOKIE_NAME, { httpOnly: true, sameSite: 'lax', path: '/' });
-}
-
-/** Parses the session cookie (if any) and attaches req.user + req.sessionToken. */
-function attachUser(req, _res, next) {
+/** Reads the httpOnly session cookie and sets req.user (or null). Never throws. */
+function attachUser(req, res, next) {
   req.user = null;
-  req.sessionToken = null;
-  const token = req.cookies ? req.cookies[COOKIE_NAME] : null;
+  const token = req.cookies && req.cookies.session;
   if (token) {
-    try {
-      req.user = jwt.verify(token, JWT_SECRET);
-      req.sessionToken = token;
-    } catch {
-      /* expired/tampered session → treated as logged out */
-    }
+    try { req.user = tokens.verifySession(token); } catch { res.clearCookie('session', { path: '/' }); }
   }
   next();
 }
 
-function requireAuth(req, _res, next) {
-  if (!req.user) return next(new AppError(401, 'AUTH_REQUIRED', 'Please sign in to continue.'));
-  return next();
-}
-
+/** API guard: 401 if not signed in, 403 if the role is not allowed. */
 function requireRole(...roles) {
-  return (req, _res, next) => {
-    if (!req.user) return next(new AppError(401, 'AUTH_REQUIRED', 'Please sign in to continue.'));
-    if (!roles.includes(req.user.role)) {
-      return next(new AppError(403, 'FORBIDDEN', 'Your role is not allowed to do that.'));
-    }
-    return next();
+  return (req, res, next) => {
+    if (!req.user) return res.status(401).json({ error: 'unauthenticated', message: 'Please sign in.' });
+    if (!roles.includes(req.user.role)) return res.status(403).json({ error: 'forbidden', message: 'You do not have access to this.' });
+    next();
   };
 }
 
-function roleHome(role) {
-  if (role === 'sales') return '/sales';
-  if (role === 'admin') return '/admin';
-  return '/quote';
+/** Page guard: redirects to /login instead of returning JSON. */
+function requireRolePage(...roles) {
+  return (req, res, next) => {
+    if (!req.user) return res.redirect(`/login?next=${encodeURIComponent(req.path.replace('.html', ''))}`);
+    if (!roles.includes(req.user.role)) return res.redirect('/login?denied=1');
+    next();
+  };
 }
 
-module.exports = {
-  COOKIE_NAME,
-  signSession,
-  setSessionCookie,
-  clearSessionCookie,
-  attachUser,
-  requireAuth,
-  requireRole,
-  roleHome,
-};
+const HOME = { homeowner: '/quote', sales: '/sales', admin: '/admin' };
+
+module.exports = { attachUser, requireRole, requireRolePage, HOME };

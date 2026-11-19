@@ -1,0 +1,31 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Price Locked — CoolHome Vault</title>
+  <meta name="theme-color" content="#f9efe5">
+  <link rel="preload" href="/fonts/serif.woff2" as="font" type="font/woff2" crossorigin>
+  <link rel="preload" href="/fonts/inter.woff2" as="font" type="font/woff2" crossorigin>
+  <link rel="stylesheet" href="/css/styles.css">
+</head>
+<body class="vault-body">
+  <div id="chrome"></div>
+  <div class="vault-stage">
+    <div class="vault-device">
+      <div class="vault-notch" aria-hidden="true"></div>
+      <div id="vault-header"></div>
+      <main class="vault-inner">
+        <div class="progress" id="progress"></div>
+        <section class="vault-card" id="content" aria-live="polite"><p class="muted center"><span class="spinner dark"></span> Confirming your deposit…</p></section>
+        <div class="vault-foot">Cryptographically signed &middot; Verifiable any time</div>
+        <div class="home-indicator" aria-hidden="true"></div>
+      </main>
+    </div>
+  </div>
+  <script src="/js/common.js"></script>
+  <script src="/js/fx.js"></script>
+  <script src="/js/progress.js"></script>
+  <script src="/js/success.js"></script>
+</body>
+</html>

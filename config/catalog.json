@@ -1,133 +1,79 @@
 {
-  "_comment": "PLACEHOLDER DATA — replace every price, spec and image with real catalog data before go-live.",
-  "brands": ["Goodman", "Rheem", "Trane"],
+  "_notice": "PLACEHOLDER DATA - every value in this file is a made-up example and must be replaced with real products and prices before go-live.",
+  "company": {
+    "name": "CoolHome Install (placeholder)",
+    "phone": "(555) 010-0199",
+    "email": "hello@example.com"
+  },
+  "brands": [
+    { "id": "goodman", "name": "Goodman", "tagline": "Dependable comfort at a smart price" },
+    { "id": "rheem", "name": "Rheem", "tagline": "Proven performance, strong warranty" },
+    { "id": "trane", "name": "Trane", "tagline": "Premium build, whisper-quiet operation" }
+  ],
   "systems": [
     {
-      "id": "goodman-good",
-      "brand": "Goodman",
-      "tier": "good",
-      "name": "GSX14 Value",
-      "tonnageOptions": [1.5, 2, 2.5, 3, 3.5, 4, 5],
-      "seer2": 14.3,
-      "noiseDb": 74,
-      "warrantyYears": 10,
-      "baseInstalledPrice": 5495,
-      "image": "/assets/img/system-goodman.svg",
-      "blurb": "Reliable single-stage cooling at the friendliest price point."
+      "id": "goodman-good", "brand": "goodman", "tier": "Good", "name": "GSXN4",
+      "tonnageOptions": [2, 2.5, 3, 3.5, 4, 5], "seer2": 13.4, "noiseDb": 74, "warrantyYears": 10,
+      "basePrice": 5200, "image": "/img/ac-unit.svg", "active": true,
+      "highlights": ["Single-stage cooling", "10-year parts warranty", "Best value entry system"]
     },
     {
-      "id": "goodman-better",
-      "brand": "Goodman",
-      "tier": "better",
-      "name": "GSX16 Comfort",
-      "tonnageOptions": [1.5, 2, 2.5, 3, 3.5, 4, 5],
-      "seer2": 16,
-      "noiseDb": 71,
-      "warrantyYears": 10,
-      "baseInstalledPrice": 6895,
-      "image": "/assets/img/system-goodman.svg",
-      "blurb": "Two-stage compressor for steadier temps and lower bills."
+      "id": "goodman-better", "brand": "goodman", "tier": "Better", "name": "GSXH5",
+      "tonnageOptions": [2, 2.5, 3, 3.5, 4, 5], "seer2": 15.2, "noiseDb": 72, "warrantyYears": 10,
+      "basePrice": 6400, "image": "/img/ac-unit.svg", "active": true,
+      "highlights": ["Higher efficiency coil", "Quieter fan motor", "10-year parts warranty"]
     },
     {
-      "id": "goodman-best",
-      "brand": "Goodman",
-      "tier": "best",
-      "name": "GSXV9 Inverter",
-      "tonnageOptions": [2, 2.5, 3, 3.5, 4, 5],
-      "seer2": 19,
-      "noiseDb": 57,
-      "warrantyYears": 12,
-      "baseInstalledPrice": 8995,
-      "image": "/assets/img/system-goodman.svg",
-      "blurb": "Variable-speed inverter, whisper-quiet, best-in-class humidity control."
+      "id": "goodman-best", "brand": "goodman", "tier": "Best", "name": "GLXS5 Variable",
+      "tonnageOptions": [2, 3, 4, 5], "seer2": 17.0, "noiseDb": 69, "warrantyYears": 12,
+      "basePrice": 7600, "image": "/img/ac-unit.svg", "active": true,
+      "highlights": ["Two-stage cooling", "Better humidity control", "12-year parts warranty"]
     },
     {
-      "id": "rheem-good",
-      "brand": "Rheem",
-      "tier": "good",
-      "name": "Classic RA14",
-      "tonnageOptions": [1.5, 2, 2.5, 3, 3.5, 4, 5],
-      "seer2": 14.3,
-      "noiseDb": 73,
-      "warrantyYears": 10,
-      "baseInstalledPrice": 5795,
-      "image": "/assets/img/system-rheem.svg",
-      "blurb": "Proven workhorse with easy service access and solid warranty."
+      "id": "rheem-good", "brand": "rheem", "tier": "Good", "name": "Classic RA13",
+      "tonnageOptions": [2, 2.5, 3, 3.5, 4, 5], "seer2": 13.8, "noiseDb": 73, "warrantyYears": 10,
+      "basePrice": 5900, "image": "/img/ac-unit.svg", "active": true,
+      "highlights": ["Reliable single-stage unit", "10-year parts warranty", "Corrosion-resistant cabinet"]
     },
     {
-      "id": "rheem-better",
-      "brand": "Rheem",
-      "tier": "better",
-      "name": "Classic Plus RA16",
-      "tonnageOptions": [1.5, 2, 2.5, 3, 3.5, 4, 5],
-      "seer2": 16,
-      "noiseDb": 70,
-      "warrantyYears": 10,
-      "baseInstalledPrice": 7395,
-      "image": "/assets/img/system-rheem.svg",
-      "blurb": "Two-stage comfort with Rheem's PlusOne serviceability."
+      "id": "rheem-better", "brand": "rheem", "tier": "Better", "name": "Prestige RA16",
+      "tonnageOptions": [2, 2.5, 3, 3.5, 4, 5], "seer2": 15.8, "noiseDb": 71, "warrantyYears": 10,
+      "basePrice": 7100, "image": "/img/ac-unit.svg", "active": true,
+      "highlights": ["Quiet-operating fan blades", "Efficient copper coil", "10-year parts warranty"]
     },
     {
-      "id": "rheem-best",
-      "brand": "Rheem",
-      "tier": "best",
-      "name": "Prestige RA20",
-      "tonnageOptions": [2, 2.5, 3, 3.5, 4, 5],
-      "seer2": 20,
-      "noiseDb": 54,
-      "warrantyYears": 12,
-      "baseInstalledPrice": 9995,
-      "image": "/assets/img/system-rheem.svg",
-      "blurb": "Variable-speed flagship with EcoNet smart diagnostics built in."
+      "id": "rheem-best", "brand": "rheem", "tier": "Best", "name": "Prestige RA20 Modulating",
+      "tonnageOptions": [2, 3, 4, 5], "seer2": 19.0, "noiseDb": 67, "warrantyYears": 12,
+      "basePrice": 8400, "image": "/img/ac-unit.svg", "active": true,
+      "highlights": ["Variable-speed compressor", "Precise temperature control", "12-year parts warranty"]
     },
     {
-      "id": "trane-good",
-      "brand": "Trane",
-      "tier": "good",
-      "name": "XR14",
-      "tonnageOptions": [1.5, 2, 2.5, 3, 3.5, 4, 5],
-      "seer2": 14.8,
-      "noiseDb": 73,
-      "warrantyYears": 10,
-      "baseInstalledPrice": 6295,
-      "image": "/assets/img/system-trane.svg",
-      "blurb": "Trane durability and build quality at an entry price."
+      "id": "trane-good", "brand": "trane", "tier": "Good", "name": "XR14",
+      "tonnageOptions": [2, 2.5, 3, 3.5, 4, 5], "seer2": 14.0, "noiseDb": 72, "warrantyYears": 10,
+      "basePrice": 7000, "image": "/img/ac-unit.svg", "active": true,
+      "highlights": ["Industry-known durability", "10-year parts warranty", "Weatherguard cabinet"]
     },
     {
-      "id": "trane-better",
-      "brand": "Trane",
-      "tier": "better",
-      "name": "XR16",
-      "tonnageOptions": [1.5, 2, 2.5, 3, 3.5, 4, 5],
-      "seer2": 17,
-      "noiseDb": 69,
-      "warrantyYears": 12,
-      "baseInstalledPrice": 7995,
-      "image": "/assets/img/system-trane.svg",
-      "blurb": "Two-stage cooling with Trane's Climatuff compressor."
+      "id": "trane-better", "brand": "trane", "tier": "Better", "name": "XR16",
+      "tonnageOptions": [2, 2.5, 3, 3.5, 4, 5], "seer2": 16.0, "noiseDb": 70, "warrantyYears": 10,
+      "basePrice": 8600, "image": "/img/ac-unit.svg", "active": true,
+      "highlights": ["Sound-reducing fan", "High-efficiency coil", "10-year parts warranty"]
     },
     {
-      "id": "trane-best",
-      "brand": "Trane",
-      "tier": "best",
-      "name": "XV20i TruComfort",
-      "tonnageOptions": [2, 2.5, 3, 3.5, 4, 5],
-      "seer2": 21.5,
-      "noiseDb": 55,
-      "warrantyYears": 12,
-      "baseInstalledPrice": 11495,
-      "image": "/assets/img/system-trane.svg",
-      "blurb": "750-speed variable compressor — the quietest, most efficient we sell."
+      "id": "trane-best", "brand": "trane", "tier": "Best", "name": "XV20i TruComfort",
+      "tonnageOptions": [2, 3, 4, 5], "seer2": 21.0, "noiseDb": 64, "warrantyYears": 12,
+      "basePrice": 10500, "image": "/img/ac-unit.svg", "active": true,
+      "highlights": ["Variable-speed, whisper-quiet", "Top-tier efficiency", "12-year parts warranty"]
     }
   ],
   "addOns": [
-    { "id": "smart-thermostat", "name": "Smart thermostat", "description": "Wi-Fi thermostat with app control, schedules and energy reports.", "price": 349, "category": "comfort" },
-    { "id": "uv-purifier", "name": "UV air purifier", "description": "In-duct UV lamp that neutralizes mold, bacteria and viruses.", "price": 649, "category": "air-quality" },
-    { "id": "surge-protector", "name": "Surge protector", "description": "Protects the compressor and control board from power surges.", "price": 189, "category": "protection" },
-    { "id": "extended-warranty", "name": "Extended labor warranty", "description": "Extends labor coverage to 10 years, parts and labor included.", "price": 595, "category": "protection" },
-    { "id": "duct-sealing", "name": "Duct sealing", "description": "Aerosol seal of leaky ducts — can cut cooling costs up to 20%.", "price": 899, "category": "efficiency" },
-    { "id": "zoning-kit", "name": "Zoning kit", "description": "Two-zone damper kit with dedicated thermostats per zone.", "price": 1450, "category": "comfort" },
-    { "id": "condensate-pump", "name": "Condensate pump", "description": "Pump kit for installs where a gravity drain is not available.", "price": 275, "category": "install" },
-    { "id": "new-pad", "name": "New condenser pad", "description": "Composite equipment pad, leveled and sized for the new unit.", "price": 225, "category": "install" }
+    { "id": "smart-thermostat", "name": "Smart thermostat", "description": "Wi-Fi thermostat with scheduling and energy reports.", "price": 289, "active": true },
+    { "id": "uv-purifier", "name": "UV air purifier", "description": "In-duct UV-C light reduces mold, bacteria and odors.", "price": 649, "active": true },
+    { "id": "surge-protector", "name": "Surge protector", "description": "Protects the compressor and control board from power spikes.", "price": 245, "active": true },
+    { "id": "extended-warranty", "name": "Extended warranty", "description": "Adds 5 years of labor coverage on top of the manufacturer warranty.", "price": 595, "active": true },
+    { "id": "duct-sealing", "name": "Duct sealing", "description": "Mastic sealing of accessible duct joints to cut leakage.", "price": 850, "active": true },
+    { "id": "zoning-kit", "name": "Zoning kit", "description": "Dampers and controls for two independent temperature zones.", "price": 1450, "active": true },
+    { "id": "condensate-pump", "name": "Condensate pump", "description": "Moves condensate water where gravity drainage is not possible.", "price": 275, "active": true },
+    { "id": "new-pad", "name": "New equipment pad", "description": "Level composite pad for the outdoor unit.", "price": 395, "active": true }
   ]
 }

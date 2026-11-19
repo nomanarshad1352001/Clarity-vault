@@ -1,0 +1,34 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 160 90" role="img" aria-label="Outdoor AC unit">
+  <defs>
+    <linearGradient id="body" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#fffcf8"/>
+      <stop offset="1" stop-color="#efe3d5"/>
+    </linearGradient>
+    <linearGradient id="acc" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#2b231d"/>
+      <stop offset="1" stop-color="#8b6f56"/>
+    </linearGradient>
+    <radialGradient id="glow" cx="50%" cy="50%" r="50%">
+      <stop offset="0" stop-color="#d8c3ae" stop-opacity=".45"/>
+      <stop offset="1" stop-color="#d8c3ae" stop-opacity="0"/>
+    </radialGradient>
+  </defs>
+  <ellipse cx="80" cy="80" rx="46" ry="4.5" fill="#2b231d" opacity=".10"/>
+  <circle cx="80" cy="44" r="38" fill="url(#glow)"/>
+  <rect x="42" y="10" width="76" height="66" rx="11" fill="url(#body)" stroke="#d9c8b6" stroke-width="1.6"/>
+  <rect x="48" y="16" width="64" height="54" rx="7" fill="#faf4ec" stroke="#e6d8c8"/>
+  <g stroke="#d8c7b5" stroke-width="1.3" stroke-linecap="round">
+    <path d="M53 23h54M53 28h54M53 59h54M53 64h54"/>
+  </g>
+  <circle cx="80" cy="43" r="19" fill="#f3e8dc" stroke="#cbb6a1" stroke-width="2"/>
+  <g>
+    <g fill="url(#acc)" opacity=".85">
+      <path d="M80 43 C74 33 80 25 86 29 C88 34 85 40 80 43z"/>
+      <path d="M80 43 C90 41 97 47 93 53 C88 55 82 50 80 43z"/>
+      <path d="M80 43 C80 54 72 59 67 54 C66 49 72 44 80 43z"/>
+      <animateTransform attributeName="transform" type="rotate" from="0 80 43" to="360 80 43" dur="4s" repeatCount="indefinite"/>
+    </g>
+  </g>
+  <circle cx="80" cy="43" r="3.4" fill="#fffcf8" stroke="#2b231d" stroke-width="1.5"/>
+  <rect x="103" y="12.5" width="8" height="2.5" rx="1.25" fill="#8b6f56"/>
+</svg>

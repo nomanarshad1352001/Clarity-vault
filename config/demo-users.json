@@ -1,26 +1,23 @@
 {
-  "_comment": "Demo-only users. Passwords are bcrypt hashes of 'Demo@123'. Replace with a real identity provider / database before go-live.",
+  "_notice": "DEMO USERS ONLY - password for all is Demo@123. Replace with real authentication before go-live.",
   "users": [
     {
-      "id": "usr_homeowner",
       "email": "homeowner@demo.com",
-      "name": "Harper Homeowner",
       "role": "homeowner",
-      "passwordHash": "$2b$10$KiOMe3N7RvvZfbIflnTxFeZq9w96NT1sKUMgMP6f/H1TDkCQ58Cp6"
+      "name": "Demo Homeowner",
+      "passwordHash": "$2b$10$uFaalnglJx1CLyM/uTh1LeFqTM9nMTybEnf94jiO5NKqtsSAm7Osi"
     },
     {
-      "id": "usr_sales",
       "email": "sales@demo.com",
-      "name": "Sam Sales",
       "role": "sales",
-      "passwordHash": "$2b$10$KiOMe3N7RvvZfbIflnTxFeZq9w96NT1sKUMgMP6f/H1TDkCQ58Cp6"
+      "name": "Demo Sales Rep",
+      "passwordHash": "$2b$10$4tP0ttjHOcmj0wCD9unZAOjXhh5CZPYsHGeSHA.Jux9JBBNS7ep.2"
     },
     {
-      "id": "usr_admin",
       "email": "admin@demo.com",
-      "name": "Ada Admin",
       "role": "admin",
-      "passwordHash": "$2b$10$KiOMe3N7RvvZfbIflnTxFeZq9w96NT1sKUMgMP6f/H1TDkCQ58Cp6"
+      "name": "Demo Admin",
+      "passwordHash": "$2b$10$5VCbQAaaVw/yPmjAyGrYhuqLGbDOOXCqFJCtIDp7X67lsxEmGYDa6"
     }
   ]
 }

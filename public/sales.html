@@ -1,50 +1,57 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
-  <meta name="theme-color" content="#FCF1EA" />
-  <title>Sales desk — AireDirect</title>
-  <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
-  <link rel="preload" href="/assets/fonts/source-serif-4.woff2" as="font" type="font/woff2" crossorigin />
-  <link rel="preload" href="/assets/fonts/dm-sans.woff2" as="font" type="font/woff2" crossorigin />
-  <link rel="stylesheet" href="/assets/css/app.css" />
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Sales Vault — CoolHome</title>
+  <link rel="preload" href="/fonts/serif.woff2" as="font" type="font/woff2" crossorigin>
+  <link rel="preload" href="/fonts/inter.woff2" as="font" type="font/woff2" crossorigin>
+  <link rel="stylesheet" href="/css/styles.css">
 </head>
-<body class="layout-wide">
-  <div class="stage-wide">
-    <div class="panel">
-      <header id="app-header"></header>
-      <div class="pill-row"><span class="pill" id="screen-pill"><span class="pill-text">Live from the order store</span></span></div>
-      <main class="panel-body">
-        <section class="wide-hero">
-          <div>
-            <h1 class="wide-title">Quotes &amp; deposits</h1>
-            <p class="wide-sub">Every locked price and paid deposit, as it happens.</p>
-          </div>
-          <div class="wide-actions">
-            <button class="btn btn-sand" id="refresh-btn" type="button"><span data-icon="refresh"></span><span class="btn-label">Refresh</span></button>
-            <button class="btn btn-dark" id="export-btn" type="button"><span data-icon="download"></span><span class="btn-label">Export CSV</span></button>
-          </div>
+<body>
+  <div class="shell">
+    <aside class="side" id="side"></aside>
+    <div class="main">
+      <div id="chrome"></div>
+      <div class="dash-body">
+        <section class="dash-hero">
+          <h1>Sales pipeline</h1>
+          <p>Locked quotes and paid deposits. In-memory demo data - resets when the server restarts.</p>
+          <div class="row-actions" id="hero-actions"></div>
         </section>
-        <section class="stats" id="stats" aria-live="polite"></section>
-        <section class="toolbar">
-          <div class="seg seg-auto" id="f-status" role="tablist" aria-label="Status filter">
-            <span class="seg-thumb" aria-hidden="true"></span>
-            <button type="button" role="tab" data-status="">All</button>
-            <button type="button" role="tab" data-status="locked">Locked</button>
-            <button type="button" role="tab" data-status="paid">Paid</button>
-          </div>
-          <label class="search">
-            <span class="search-ic" data-icon="search"></span>
-            <span class="sr-only">Search orders</span>
-            <input class="input" id="f-q" placeholder="Search ref, customer or system…" />
-          </label>
-        </section>
-        <section class="sheet sheet-flat" id="orders-host"><div class="skeleton sk-table"></div></section>
-        <p class="screen-foot" id="screen-foot">Demo orders live in memory and reset when the server restarts</p>
-      </main>
+
+        <div class="kpis" id="kpis"></div>
+
+        <div class="panels">
+          <div class="panel"><h3>Quotes locked <small>last 14 days</small></h3><div id="chart-days"></div></div>
+          <div class="panel"><h3>Status mix</h3><div id="chart-status"></div></div>
+          <div class="panel"><h3>By brand</h3><div id="chart-brand"></div></div>
+        </div>
+
+        <form class="filters" id="filters">
+          <div><label for="f-q">Search</label><input id="f-q" type="search" placeholder="Ref, name, email, ZIP" maxlength="80"></div>
+          <div><label for="f-status">Status</label><select id="f-status"><option value="">All</option><option value="locked">Locked</option><option value="paid">Paid</option><option value="expired">Expired</option></select></div>
+          <div><label for="f-brand">Brand</label><select id="f-brand"><option value="">All</option></select></div>
+          <div><label for="f-from">From</label><input id="f-from" type="date"></div>
+          <div><label for="f-to">To</label><input id="f-to" type="date"></div>
+          <div class="actions"><button class="btn ghost" type="button" id="reset">Reset</button><a class="btn" id="export" href="/api/sales/orders.csv" download>Export CSV</a></div>
+        </form>
+
+        <div id="alert" class="alert bad hidden" role="alert"></div>
+        <div class="table-wrap">
+          <table class="data">
+            <thead><tr><th>Reference</th><th>Status</th><th>Customer</th><th>System</th><th>Total</th><th>Deposit</th><th>Locked</th></tr></thead>
+            <tbody id="rows"></tbody>
+          </table>
+          <div id="empty"></div>
+        </div>
+      </div>
     </div>
   </div>
-  <script type="module" src="/assets/js/sales.js"></script>
+  <div id="drawer" class="drawer hidden" role="dialog" aria-modal="true" aria-label="Order detail"><div class="drawer-panel" id="drawer-panel"></div></div>
+  <script src="/js/common.js"></script>
+  <script src="/js/fx.js"></script>
+  <script src="/js/charts.js"></script>
+  <script src="/js/sales.js"></script>
 </body>
 </html>

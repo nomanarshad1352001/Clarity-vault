@@ -1,46 +1,44 @@
 'use strict';
 /**
- * adapters — factory for all external integrations. Each domain has a "mock"
- * and a "live" implementation; selection is by env var (e.g. PAYMENTS_ADAPTER)
- * with optional in-memory admin override (see configStore.adapterMode).
- *
- * Swapping a mock for a real provider means implementing the same small
- * interface — no route or service code changes.
+ * Adapter registry. Each external system has a "mock" and a "live" implementation.
+ * The active mode comes from env (PAYMENTS_MODE, FINANCING_MODE, CRM_MODE, NOTIFY_MODE, ADDRESS_MODE)
+ * and can be toggled at runtime by an Admin (in memory only - restart returns to the env value).
  */
-const configStore = require('../configStore');
+const config = require('../config');
 
-const payments = require('./payments');
-const financing = require('./financing');
-const crm = require('./crm');
-const email = require('./email');
-const sms = require('./sms');
-const address = require('./address');
-
-const factories = {
-  payments: { mock: () => new payments.MockPayments(), live: () => new payments.StripePayments() },
-  financing: { mock: () => new financing.MockFinancing(), live: () => new financing.LiveFinancing() },
-  crm: { mock: () => new crm.MockCrm(), live: () => new crm.HubSpotCrm() },
-  email: { mock: () => new email.MockEmail(), live: () => new email.SendGridEmail() },
-  sms: { mock: () => new sms.MockSms(), live: () => new sms.TwilioSms() },
-  address: { mock: () => new address.MockAddress(), live: () => new address.GooglePlacesAddress() },
+const defs = {
+  payments: require('./payments'),
+  financing: require('./financing'),
+  crm: require('./crm'),
+  notifications: require('./notifications'),
+  address: require('./address'),
 };
 
-const g = (globalThis.__airedirect = globalThis.__airedirect || {});
-g.adapterInstances = g.adapterInstances || {};
-const instances = g.adapterInstances;
+const LABELS = { payments: 'Payments (Stripe Checkout)', financing: 'Financing (lender)', crm: 'CRM (HubSpot)', notifications: 'Email / SMS (SendGrid / Twilio)', address: 'Address lookup (Google Places)' };
+const modes = { ...config.modes };
 
-function get(domain) {
-  const { mode } = configStore.adapterMode(domain);
-  const key = `${domain}:${mode}`;
-  if (!instances[key]) instances[key] = factories[domain][mode]();
-  return instances[key];
+for (const [name, mode] of Object.entries(modes)) {
+  if (!['mock', 'live'].includes(mode)) throw new Error(`Invalid mode "${mode}" for adapter ${name}`);
+  if (mode === 'live' && defs[name].problems().length) {
+    throw new Error(`Adapter ${name} is set to live but is missing: ${defs[name].problems().join(', ')}`);
+  }
 }
 
-module.exports = {
-  getPayments: () => get('payments'),
-  getFinancing: () => get('financing'),
-  getCrm: () => get('crm'),
-  getEmail: () => get('email'),
-  getSms: () => get('sms'),
-  getAddress: () => get('address'),
-};
+const names = () => Object.keys(defs);
+const getMode = (name) => modes[name];
+const get = (name) => defs[name][modes[name]];
+
+function setMode(name, mode) {
+  if (!defs[name]) return { ok: false, error: 'Unknown adapter' };
+  if (!['mock', 'live'].includes(mode)) return { ok: false, error: 'Mode must be mock or live' };
+  const missing = mode === 'live' ? defs[name].problems() : [];
+  if (missing.length) return { ok: false, error: `Cannot switch to live. Missing env: ${missing.join(', ')}` };
+  const from = modes[name];
+  modes[name] = mode;
+  return { ok: true, from, to: mode };
+}
+
+const status = () => names().map((name) => ({ name, label: LABELS[name], mode: modes[name], liveReady: defs[name].problems().length === 0, missingEnv: defs[name].problems() }));
+const anyMock = () => names().some((n) => modes[n] === 'mock');
+
+module.exports = { get, getMode, setMode, status, names, anyMock };

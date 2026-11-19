@@ -1,97 +1,86 @@
 'use strict';
 /**
- * integrations — fan-out of business events to external systems (CRM, email,
- * SMS) through the adapter layer + retry queue. Everything here is fire-and-
- * forget from the request's point of view.
+ * Business integrations (CRM, email, SMS). Everything goes through the retry queue,
+ * so a failing third party never blocks or fails a customer request.
  */
 const adapters = require('../adapters');
-const retryQueue = require('./retryQueue');
-const logger = require('../logger');
+const queue = require('./queue');
+const config = require('../config');
+const { REF_RE } = require('./tokens');
 
-function baseUrl() {
-  return (process.env.APP_BASE_URL || 'http://localhost:3000').replace(/\/$/, '');
+const money = (cents) => `$${(cents / 100).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+
+function note(order, channel, to) {
+  (order.notifications ||= []).push({ ts: new Date().toISOString(), channel, to: channel === 'internal' ? to : '[customer]' });
 }
 
-function onQuoteLocked(order, lockToken) {
-  const verifyUrl = `${baseUrl()}/verify?token=${encodeURIComponent(lockToken)}`;
+/** Create CRM contact+deal once; safe to call repeatedly (used by both lock and payment jobs). */
+async function ensureCrm(order) {
+  if (order.crm.dealId) return;
+  if (!order.customer) return; // restored-from-token order: nothing to sync
+  const r = await adapters.get('crm').createContactAndDeal({ customer: order.customer, order });
+  order.crm = { contactId: r.contactId, dealId: r.dealId };
+}
 
-  retryQueue.enqueue('crm.contact+deal', async () => {
-    const crm = adapters.getCrm();
-    const contact = await crm.upsertContact({ email: order.customerEmail, name: order.customerName });
-    const deal = await crm.createDeal({
-      name: `Price lock ${order.ref}`,
-      amount: order.quote.total,
-      stage: 'quote_locked',
-      contactId: contact.id,
-      ref: order.ref,
-    });
-    store_update(order, { crmContactId: contact.id, crmDealId: deal.id });
-  }, { ref: order.ref });
+function verifyLink(order) {
+  return `${config.appUrl}/verify?token=${encodeURIComponent(order.token)}`;
+}
 
-  retryQueue.enqueue('email.quoteLocked', async () => {
-    const email = adapters.getEmail();
-    await email.send({
-      to: order.customerEmail,
-      subject: `Your price is locked — ${order.ref}`,
+function onQuoteLocked(order) {
+  if (!REF_RE.test(order.ref) || !order.customer) return;
+  const q = order.quote;
+  queue.enqueue('crm.createContactAndDeal', () => ensureCrm(order), { ref: order.ref });
+
+  queue.enqueue('email.customerConfirmation', async () => {
+    await adapters.get('notifications').sendEmail({
+      to: order.customer.email,
+      subject: `Your AC price is locked - ${order.ref}`,
       text: [
-        `Hi ${order.customerName || 'there'},`,
-        ``,
-        `Your new ${order.quote.system.brand} ${order.quote.system.name} is locked at $${order.quote.total.toFixed(2)}.`,
-        `This price is guaranteed until ${new Date(order.lockExpiresAt).toDateString()}.`,
-        ``,
-        `Verify your locked price any time: ${verifyUrl}`,
-        `Reference: ${order.ref}`,
+        `Hi ${order.customer.name},`, '',
+        `Your price for the ${q.system.brandName} ${q.system.name} (${q.system.tonnage} ton) is locked at ${money(q.totalCents)} (tax included).`,
+        `Reference: ${order.ref}`, `Locked until: ${new Date(order.expiresAt).toDateString()}`,
+        `Deposit due to confirm: ${money(q.depositCents)}`, '',
+        `Verify your locked price any time: ${verifyLink(order)}`,
       ].join('\n'),
     });
-    const salesTo = process.env.SALES_NOTIFY_EMAIL;
-    if (salesTo) {
-      await email.send({
-        to: salesTo,
-        subject: `[Sales] New locked quote ${order.ref}`,
-        text: `Quote ${order.ref} locked for $${order.quote.total.toFixed(2)} (${order.quote.system.brand} ${order.quote.system.name}). Customer: ${order.customerEmail}.`,
-      });
-    }
+    note(order, 'email', 'customer');
   }, { ref: order.ref });
 
-  retryQueue.enqueue('sms.quoteLocked', async () => {
-    const sms = adapters.getSms();
-    await sms.send({
-      to: order.customerPhone || '+15550000000',
-      body: `AireDirect: price locked at $${order.quote.total.toFixed(2)} until ${new Date(order.lockExpiresAt).toDateString()}. Ref ${order.ref}. Verify: ${verifyUrl}`,
+  if (order.customer.phone) {
+    queue.enqueue('sms.customerConfirmation', async () => {
+      await adapters.get('notifications').sendSms({ to: order.customer.phone, body: `Your AC price ${money(q.totalCents)} is locked until ${new Date(order.expiresAt).toDateString()}. Ref ${order.ref}. Verify: ${verifyLink(order)}` });
+    }, { ref: order.ref });
+  }
+
+  queue.enqueue('email.salesNotification', async () => {
+    await adapters.get('notifications').sendEmail({
+      to: config.salesNotifyEmail,
+      subject: `New locked quote ${order.ref} - ${money(q.totalCents)}`,
+      text: `A customer locked a quote.\nRef: ${order.ref}\nSystem: ${q.system.brandName} ${q.system.name}\nTotal: ${money(q.totalCents)}\nOpen the Sales dashboard: ${config.appUrl}/sales`,
     });
+    note(order, 'internal', 'sales');
   }, { ref: order.ref });
 }
 
-function onPaymentSucceeded(order) {
-  retryQueue.enqueue('crm.dealStage', async () => {
-    if (!order.crmDealId) return;
-    const crm = adapters.getCrm();
-    await crm.updateDealStage(order.crmDealId, 'deposit_paid');
+function onPaymentReceived(order) {
+  const q = order.quote;
+  queue.enqueue('crm.updateDealStage', async () => {
+    await ensureCrm(order);
+    if (order.crm.dealId) await adapters.get('crm').updateDealStage({ dealId: order.crm.dealId, stage: 'deposit_paid' });
   }, { ref: order.ref });
 
-  retryQueue.enqueue('email.depositPaid', async () => {
-    const email = adapters.getEmail();
-    await email.send({
-      to: order.customerEmail,
-      subject: `Deposit received — ${order.ref}`,
-      text: `We've received your $${order.quote.deposit.toFixed(2)} deposit. Your install team will reach out within one business day to schedule. Reference: ${order.ref}.`,
-    });
-    const salesTo = process.env.SALES_NOTIFY_EMAIL;
-    if (salesTo) {
-      await email.send({
-        to: salesTo,
-        subject: `[Sales] Deposit paid ${order.ref}`,
-        text: `Deposit of $${order.quote.deposit.toFixed(2)} paid on ${order.ref}.`,
+  if (order.customer) {
+    queue.enqueue('email.customerReceipt', async () => {
+      await adapters.get('notifications').sendEmail({
+        to: order.customer.email,
+        subject: `Deposit received - ${order.ref}`,
+        text: `Thanks ${order.customer.name}! We received your ${money(q.depositCents)} deposit. Your price of ${money(q.totalCents)} stays locked. Reference: ${order.ref}\nVerify: ${verifyLink(order)}`,
       });
-    }
+    }, { ref: order.ref });
+  }
+  queue.enqueue('email.salesPaid', async () => {
+    await adapters.get('notifications').sendEmail({ to: config.salesNotifyEmail, subject: `Deposit paid ${order.ref}`, text: `Deposit of ${money(q.depositCents)} paid for ${order.ref}. Next step: schedule the install.` });
   }, { ref: order.ref });
 }
 
-// Late require to avoid a cycle: store ← retryQueue ← integrations
-const store = require('./store');
-function store_update(order, patch) {
-  store.updateOrder(order.id, patch);
-}
-
-logger.debug('integrations module loaded');
-module.exports = { onQuoteLocked, onPaymentSucceeded };
+module.exports = { onQuoteLocked, onPaymentReceived };

@@ -1,52 +1,91 @@
 # Manual QA script
 
-Run against a fresh boot (`node server/index.js` or the hosted preview). Check every box for all three roles.
+Start: `npm start`, open http://localhost:3000 in a fresh private window. Repeat key steps at 375 px width (phone) and desktop.
+Mock mode assumed. Demo password for all accounts: `Demo@123`.
 
-## 1. Login & roles
+## A. Homeowner – happy path (pay in full)
 
-- [ ] `/` redirects to `/login`. Demo banner is visible (when `DEMO_BANNER=true`).
-- [ ] Each **Demo as…** button autofills email + password; Sign In works. (`DEMO_AUTOFILL=false` hides the buttons.)
-- [ ] Wrong password shows an inline error and is rate-limited after repeated attempts (429).
-- [ ] Homeowner lands on `/quote`, Sales on `/sales`, Admin on `/admin`.
-- [ ] Homeowner visiting `/sales` or `/admin` is redirected to `/quote`. Sales visiting `/admin` is redirected.
-- [ ] Sign out clears the session; protected pages redirect to `/login`.
+| # | Action | Expected |
+|---|---|---|
+| 1 | Open `/` → **Start my quote** | Wizard opens at *Step 1 of 7 · Budget*, white UI with a single blue accent, "Demo mode" banner at top |
+| 2 | Leave total budget 9000, **Next** | Step 2 |
+| 3 | Type `1100 Cong` in Street | Suggestion dropdown appears; click it → city/state/ZIP fill, green "we install in your area" |
+| 4 | Change ZIP to `90210` | Amber "outside service area" message; **Next** shows ZIP error and does not advance |
+| 5 | Enter `<script>x</script>` as street, **Next** | Street error; nothing executes |
+| 6 | Restore `1100 Congress Ave`, ZIP `78701`, pick home size, **Next** | Step 3 with 9 cards under Goodman/Rheem/Trane; badges "Fits your budget / A small stretch / Over budget" |
+| 7 | Tick *Hide systems over budget* | Over-budget cards vanish |
+| 8 | Select Goodman *Better*; change tonnage | "Your installed price" updates (value comes from the server) |
+| 9 | **Next** → toggle 2–3 add-ons | Live total updates each toggle; untoggle reduces it |
+| 10 | **Back** twice, then **Next** twice | Choices preserved everywhere |
+| 11 | Step 5: **Pay in full** → **Next** | Review shows itemised lines, subtotal, 8.25 % tax, total, 10 % deposit, balance |
+| 12 | Enter name `A`, bad email → **Continue** | Field errors shown |
+| 13 | Enter valid name/email/phone → **Continue** | Step 7 with deposit amount |
+| 14 | Click **Lock my price & pay** | Redirects to demo card form showing the same deposit amount |
+| 15 | Pay with `4000 0000 0000 0002` | "Your card was declined." stay on form |
+| 16 | Pay with `4242 4242 4242 4242`, `12/40`, `123` | Success page: reference `AC-XXXXXXXX`, locked price, expiry (7 days out), progress complete |
+| 17 | Click **Verify my locked price** | `/verify` shows green "Valid price lock" with the same numbers |
+| 18 | Edit the `token=` in the URL (change one character) | "We couldn't verify this link" |
 
-## 2. Homeowner quote flow (`/quote`)
+## B. Homeowner – financing
 
-- [ ] Progress bar shows 7 steps; current step highlighted; completed steps clickable.
-- [ ] Budget: monthly/total toggle; slider and displayed value stay in sync.
-- [ ] Address: typing shows suggestions; selecting one fills street + ZIP. ZIP `90210` (outside area) shows the friendly "not serving" message and blocks Next. ZIP `75201` passes with a green confirmation.
-- [ ] System step: 3 brands × 3 tiers; budget-fit chips appear; changing tonnage changes the estimate; selecting a card shows the blue ring + check.
-- [ ] Back/Next preserve every choice (also after a full page refresh — sessionStorage).
-- [ ] Add-ons: toggles update the running total bar.
-- [ ] Payment: Pay-in-full shows the server total; Financing shows monthly per term; switching terms refetches the server quote.
-- [ ] Financing decline path: set a monthly budget below the payment → decline panel offers "Try a longer term" and "Pay in full instead"; both work. A tiny budget (e.g. $40) → declined; generous ($500) → pre-approved.
-- [ ] Review: itemized receipt (system, adjustments, add-ons, subtotal, 8.25% tax, total, 10% deposit) matches server math.
-- [ ] **Lock this price** → returns reference `AQ-XXXXXXXX`; wizard advances to deposit.
-- [ ] Deposit: test card chips fill the form. `4242…` succeeds → confirmation with ref, locked total, expiry date, verification link. `4000…0002` → declined message, order stays locked, retry works.
-- [ ] Confirmation: copy-ref button works; the verification link opens `/verify` showing the lock as valid.
-- [ ] Tamper test: change one character of the token in the `/verify` URL → "Invalid price lock".
+| # | Action | Expected |
+|---|---|---|
+| 1 | New quote, budget type **Monthly**, 150; reach step 5 → **Finance it** | Three terms (12/36/60) with monthly payments and APR |
+| 2 | Choose 12 months → **Check my financing** | Red "Not approved" with reason, buttons *Try 60 months* / *Pay in full instead* |
+| 3 | **Next** with a declined term | Blocked with message |
+| 4 | **Try 60 months** → **Next** | Approved (green); review shows `$x/mo × 60` |
+| 5 | Complete lock + payment | Success page mentions financing term and "pre-approved" |
+| 6 | Use a very large system + all add-ons (> $15,000 financed) | Status **Pending review**; you can still lock and pay |
+| 7 | **Pay in full instead** | Returns to full-payment flow, financing decision cleared |
 
-## 3. Sales dashboard (`/sales`)
+## C. Edge cases
 
-- [ ] Table lists the orders created above with status badges (locked/paid).
-- [ ] Status filter and search (by ref, email, system) work.
-- [ ] Row click opens the detail drawer: customer, itemized quote, payment ID, CRM deal id (mock id after retry queue runs ~1s).
-- [ ] Export CSV downloads; opening it shows all orders; a ref starting with `=` would be escaped (formula-injection guard).
-- [ ] Stats row counts match the table.
+- Reload mid-wizard → same step and choices restored.
+- On the card form click **Cancel and go back** → returns to step 7, lock still valid, can pay again.
+- Pay the same locked quote twice (re-open the card URL after success) → redirected to success; never double-charged.
+- Wait > 7 days (or set `priceLockDays` to 1 and edit the token's `exp` in a test) → verify shows "expired".
+- Stop and restart the server, open the old `/verify?token=…` link → still valid (signature-based).
 
-## 4. Admin dashboard (`/admin`)
+## D. Sales role
 
-- [ ] **Catalog:** change Goodman GSX14 base price 5495 → 5595 → Save → confirm modal lists the diff → Confirm → toast. Verify: a new quote on `/quote` shows the new price (server recomputed).
-- [ ] **Pricing rules:** change deposit 10% → 15% → confirm → save. Verify: review step shows 15% deposit. Restore afterwards.
-- [ ] Validation: enter tax 99% → server rejects with 400 and a field error.
-- [ ] **Integrations:** each card shows mode + required env vars. "Switch to live" without keys → 422 listing missing vars. Mock→mock toggle succeeds and logs to audit.
-- [ ] **Audit log:** shows LOGIN, PRICE_LOCKED, FINANCING_DECISION, PAYMENT_SUCCEEDED, ADMIN_* entries with timestamps and actors.
+| # | Action | Expected |
+|---|---|---|
+| 1 | Visit `/sales` signed out | Redirected to `/login` |
+| 2 | `/login` → **Demo as… Sales** → fields autofill → **Sign in** | Lands on `/sales` |
+| 3 | Review the table | Quotes from section A/B with status pills (locked / paid / expired), totals tiles |
+| 4 | Filter by status *Paid*, brand, date, search by ref/email/ZIP | Table updates; **Reset** clears |
+| 5 | Click a row | Drawer with customer, address, itemised quote, deposit/payment, financing decision, CRM deal id, notifications |
+| 6 | **Export CSV** | `quotes.csv` downloads with the current filters; open in a spreadsheet - names starting with `=` appear as text |
+| 7 | Visit `/admin` | Redirected to `/login?denied=1` with "no access" message |
+| 8 | **Sign out** | Back to `/login`; `/sales` redirects again |
 
-## 5. Security spot-checks
+## E. Admin role
 
-- [ ] View source: no inline scripts/styles; CSP header present on pages (`default-src 'self'`).
-- [ ] DevTools: POST `/api/quote` with curl/fetch without the `X-CSRF-Token` header (but with the session cookie) → 403.
-- [ ] `GET /api/orders` signed out → 401; as homeowner → 403.
-- [ ] `node --test tests/*.test.js` → all pass.
-- [ ] Server logs show no emails, card numbers, or tokens (redacted).
+| # | Action | Expected |
+|---|---|---|
+| 1 | **Demo as… Admin** → **Sign in** | Lands on `/admin`; can also open `/sales` |
+| 2 | Catalog tab: change a base price, **Review changes** | Diff `systems.N.basePrice: old → new`, nothing saved yet |
+| 3 | **Confirm & save** | "Saved". New quote in another window uses the new price; previously locked quotes unchanged |
+| 4 | Enter a negative price or blank name → **Review changes** | Validation list, no save |
+| 5 | Pricing tab: set tax 9 %, remove a service ZIP → review → confirm | Applied to new quotes; removed ZIP is now "outside service area" |
+| 6 | Integrations tab | Five adapters, all *mock*; **Switch to live** disabled with "Live needs: …" until env is set |
+| 7 | Audit log tab | Entries: `login`, `login_failed`, `price_lock`, `payment_session`, `payment`, `admin_change`, `export`; filter by type |
+| 8 | CRM & email queue tab | Recent jobs `done`; mock outbox shows customer confirmation (with verify link) and sales notification |
+| 9 | Start the server with `MOCK_FAILURE_RATE=0.6`, create a quote | Jobs show `retrying` with attempts and next-attempt times; customer flow is never blocked; permanent failures land in the Failure log |
+
+## F. Security spot checks
+
+- Login with a wrong password 5× → "Too many failed attempts" (even with the right password afterwards for 15 min).
+- `curl -X POST localhost:3000/api/quote -H 'content-type: application/json' -d '{}'` → `403 csrf_invalid` (no CSRF token).
+- Browser DevTools → Network: no request ever carries a price from the client; `POST /api/quote` bodies contain ids only.
+- DevTools → Console on every page: no CSP violations.
+- `curl -i localhost:3000/login` shows `Content-Security-Policy` without `unsafe-inline`.
+- Webhook spoof: `curl -X POST localhost:3000/api/webhooks/stripe -d '{}'` → `400 invalid_signature`.
+- `DEMO_AUTOFILL=false npm start` → `/login` has no "Demo as…" buttons.
+
+## G. Live-mode smoke test (after configuring keys)
+
+1. Stripe test mode: full flow with `4242…`; confirm the Checkout page loads, success page shows paid, webhook delivery is 200 in the dashboard, replaying the event from the dashboard returns `duplicate: true`.
+2. HubSpot: contact + deal created at lock, stage moves on payment.
+3. SendGrid/Twilio: customer email (and SMS) received, link opens `/verify`.
+4. Google Places: typing an address shows real suggestions; selecting one fills ZIP and runs the service-area check.

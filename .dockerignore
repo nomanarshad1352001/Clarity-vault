@@ -1,9 +1,10 @@
 node_modules
-.next
-.git
 .env
 .env.*
+!.env.example
+.git
+.next
+app
 tests
 docs
 *.log
-.DS_Store
