@@ -1,0 +1,41 @@
+{
+  "_comment": "PLACEHOLDER PRICING RULES — all rates, terms and service areas are demo values to be replaced with real business rules before go-live.",
+  "currency": "USD",
+  "taxRate": 0.0825,
+  "depositPercent": 0.1,
+  "priceLockDays": 7,
+  "sqftPerTon": 600,
+  "serviceAreaLabel": "the Dallas–Fort Worth metro",
+  "serviceAreaZips": [
+    "75201", "75202", "75204", "75205", "75206", "75207", "75209", "75214",
+    "75218", "75219", "75220", "75225", "75228", "75230", "75231", "75238",
+    "75240", "75243", "75244", "75248", "75252", "75254", "75287",
+    "75001", "75006", "75019", "75039", "75063", "75080", "75081"
+  ],
+  "homeSizeMultipliers": [
+    { "maxSqft": 1500, "multiplier": 0.92, "label": "Under 1,500 sq ft" },
+    { "maxSqft": 2500, "multiplier": 1.0, "label": "1,500 – 2,500 sq ft" },
+    { "maxSqft": 4000, "multiplier": 1.12, "label": "2,500 – 4,000 sq ft" },
+    { "maxSqft": null, "multiplier": 1.22, "label": "Over 4,000 sq ft" }
+  ],
+  "tonnagePriceDelta": {
+    "1.5": -500,
+    "2": -250,
+    "2.5": 0,
+    "3": 250,
+    "3.5": 550,
+    "4": 900,
+    "5": 1500
+  },
+  "financing": {
+    "terms": [
+      { "months": 12, "apr": 0 },
+      { "months": 36, "apr": 0.0899 },
+      { "months": 60, "apr": 0.1099 }
+    ],
+    "mockRules": {
+      "approveUpToBudgetRatio": 1.0,
+      "reviewUpToBudgetRatio": 1.15
+    }
+  }
+}

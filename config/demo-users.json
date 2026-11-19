@@ -1,0 +1,26 @@
+{
+  "_comment": "Demo-only users. Passwords are bcrypt hashes of 'Demo@123'. Replace with a real identity provider / database before go-live.",
+  "users": [
+    {
+      "id": "usr_homeowner",
+      "email": "homeowner@demo.com",
+      "name": "Harper Homeowner",
+      "role": "homeowner",
+      "passwordHash": "$2b$10$KiOMe3N7RvvZfbIflnTxFeZq9w96NT1sKUMgMP6f/H1TDkCQ58Cp6"
+    },
+    {
+      "id": "usr_sales",
+      "email": "sales@demo.com",
+      "name": "Sam Sales",
+      "role": "sales",
+      "passwordHash": "$2b$10$KiOMe3N7RvvZfbIflnTxFeZq9w96NT1sKUMgMP6f/H1TDkCQ58Cp6"
+    },
+    {
+      "id": "usr_admin",
+      "email": "admin@demo.com",
+      "name": "Ada Admin",
+      "role": "admin",
+      "passwordHash": "$2b$10$KiOMe3N7RvvZfbIflnTxFeZq9w96NT1sKUMgMP6f/H1TDkCQ58Cp6"
+    }
+  ]
+}

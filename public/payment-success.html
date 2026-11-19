@@ -1,0 +1,48 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+  <meta name="theme-color" content="#FCF1EA" />
+  <title>Payment — AireDirect</title>
+  <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
+  <link rel="preload" href="/assets/fonts/source-serif-4.woff2" as="font" type="font/woff2" crossorigin />
+  <link rel="preload" href="/assets/fonts/dm-sans.woff2" as="font" type="font/woff2" crossorigin />
+  <link rel="stylesheet" href="/assets/css/app.css" />
+</head>
+<body class="layout-phone">
+  <div class="stage">
+    <div class="device">
+      <div class="device-screen">
+        <div class="island" aria-hidden="true"></div>
+        <div class="screen-scroll" id="screen-scroll">
+          <header id="app-header"></header>
+          <div class="pill-row"><span class="pill" id="screen-pill"><span class="pill-text">Secure checkout</span></span></div>
+          <main class="screen-body">
+            <section class="sheet" aria-live="polite">
+              <div class="sheet-inner" id="sheet-inner">
+                <div class="step-panel">
+                  <div class="skeleton sk-title"></div>
+                  <div class="skeleton sk-line"></div>
+                  <div class="skeleton sk-block"></div>
+                </div>
+              </div>
+              <div class="sheet-actions">
+                <span></span>
+                <div class="orb-wrap">
+                  <button class="orb static" id="btn-next" type="button" aria-label="Checking"><span class="orb-core" id="orb-core"></span></button>
+                  <span class="orb-label" id="orb-label"></span>
+                </div>
+                <span></span>
+              </div>
+            </section>
+            <p class="screen-foot" id="screen-foot">Your install team reaches out within one business day</p>
+          </main>
+        </div>
+        <div class="home-indicator" aria-hidden="true"></div>
+      </div>
+    </div>
+  </div>
+  <script type="module" src="/assets/js/payment-success.js"></script>
+</body>
+</html>

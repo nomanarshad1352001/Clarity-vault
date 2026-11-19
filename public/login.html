@@ -1,0 +1,71 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+  <meta name="theme-color" content="#FCF1EA" />
+  <title>Sign in — AireDirect</title>
+  <meta name="description" content="Price a new AC system online — no sales visit." />
+  <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
+  <link rel="preload" href="/assets/fonts/source-serif-4.woff2" as="font" type="font/woff2" crossorigin />
+  <link rel="preload" href="/assets/fonts/dm-sans.woff2" as="font" type="font/woff2" crossorigin />
+  <link rel="stylesheet" href="/assets/css/app.css" />
+</head>
+<body class="layout-phone">
+  <div class="stage">
+    <div class="device">
+      <div class="device-screen">
+        <div class="island" aria-hidden="true"></div>
+        <div class="screen-scroll" id="screen-scroll">
+          <header id="app-header"></header>
+          <div class="pill-row"><span class="pill" id="screen-pill"><span class="pill-text">100% online — no sales visit</span></span></div>
+          <main class="screen-body">
+            <form class="sheet" id="login-form" novalidate>
+              <div class="sheet-inner">
+                <div class="step-panel">
+                  <div class="sheet-head">
+                    <h1 class="sheet-title">Price your new AC.</h1>
+                    <p class="sheet-sub">Sign in to see real installed prices…</p>
+                  </div>
+                  <div class="sheet-body stagger">
+                    <div class="ghost-field">
+                      <label class="sr-only" for="email">Email</label>
+                      <input class="ghost-input" id="email" name="email" type="email" autocomplete="email" placeholder="Email address" required />
+                    </div>
+                    <div class="ghost-field ghost-pass">
+                      <label class="sr-only" for="password">Password</label>
+                      <input class="ghost-input" id="password" name="password" type="password" autocomplete="current-password" placeholder="Password" required />
+                      <button class="eye-btn" id="eye-btn" type="button" aria-label="Show password"></button>
+                    </div>
+                    <div id="login-error"></div>
+                    <div class="demo-as" id="demo-as" hidden>
+                      <span class="mini-label">Demo as…</span>
+                      <div class="chips chips-center">
+                        <button class="chip chip-role" data-email="homeowner@demo.com" type="button"><span data-icon="home"></span>Homeowner</button>
+                        <button class="chip chip-role" data-email="sales@demo.com" type="button"><span data-icon="briefcase"></span>Sales</button>
+                        <button class="chip chip-role" data-email="admin@demo.com" type="button"><span data-icon="settings"></span>Admin</button>
+                      </div>
+                      <p class="hint center">Fills the form for you · password <b>Demo@123</b></p>
+                    </div>
+                  </div>
+                </div>
+              </div>
+              <div class="sheet-actions">
+                <span></span>
+                <div class="orb-wrap">
+                  <button class="orb" id="login-btn" type="submit" aria-label="Sign in"><span class="orb-core" id="orb-core"></span></button>
+                  <span class="orb-label">Sign in</span>
+                </div>
+                <span></span>
+              </div>
+            </form>
+            <p class="screen-foot" id="screen-foot">Prices are calculated on our server, never in your browser</p>
+          </main>
+        </div>
+        <div class="home-indicator" aria-hidden="true"></div>
+      </div>
+    </div>
+  </div>
+  <script type="module" src="/assets/js/login.js"></script>
+</body>
+</html>

@@ -1,0 +1,39 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+  <meta name="theme-color" content="#FCF1EA" />
+  <title>Admin console — AireDirect</title>
+  <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
+  <link rel="preload" href="/assets/fonts/source-serif-4.woff2" as="font" type="font/woff2" crossorigin />
+  <link rel="preload" href="/assets/fonts/dm-sans.woff2" as="font" type="font/woff2" crossorigin />
+  <link rel="stylesheet" href="/assets/css/app.css" />
+</head>
+<body class="layout-wide">
+  <div class="stage-wide">
+    <div class="panel">
+      <header id="app-header"></header>
+      <div class="pill-row"><span class="pill" id="screen-pill"><span class="pill-text">Changes write to config JSON</span></span></div>
+      <main class="panel-body">
+        <section class="wide-hero">
+          <div>
+            <h1 class="wide-title">Control room</h1>
+            <p class="wide-sub">Catalog, pricing rules, integrations and the audit trail.</p>
+          </div>
+        </section>
+        <div class="seg seg-wide" id="tabs" role="tablist" aria-label="Admin sections">
+          <span class="seg-thumb" aria-hidden="true"></span>
+          <button type="button" role="tab" data-tab="catalog">Catalog</button>
+          <button type="button" role="tab" data-tab="pricing">Pricing</button>
+          <button type="button" role="tab" data-tab="integrations">Integrations</button>
+          <button type="button" role="tab" data-tab="audit">Audit log</button>
+        </div>
+        <div id="tab-host"><div class="skeleton sk-table"></div></div>
+        <p class="screen-foot" id="screen-foot">Every change is recorded in the audit log</p>
+      </main>
+    </div>
+  </div>
+  <script type="module" src="/assets/js/admin.js"></script>
+</body>
+</html>

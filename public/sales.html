@@ -1,0 +1,50 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+  <meta name="theme-color" content="#FCF1EA" />
+  <title>Sales desk — AireDirect</title>
+  <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
+  <link rel="preload" href="/assets/fonts/source-serif-4.woff2" as="font" type="font/woff2" crossorigin />
+  <link rel="preload" href="/assets/fonts/dm-sans.woff2" as="font" type="font/woff2" crossorigin />
+  <link rel="stylesheet" href="/assets/css/app.css" />
+</head>
+<body class="layout-wide">
+  <div class="stage-wide">
+    <div class="panel">
+      <header id="app-header"></header>
+      <div class="pill-row"><span class="pill" id="screen-pill"><span class="pill-text">Live from the order store</span></span></div>
+      <main class="panel-body">
+        <section class="wide-hero">
+          <div>
+            <h1 class="wide-title">Quotes &amp; deposits</h1>
+            <p class="wide-sub">Every locked price and paid deposit, as it happens.</p>
+          </div>
+          <div class="wide-actions">
+            <button class="btn btn-sand" id="refresh-btn" type="button"><span data-icon="refresh"></span><span class="btn-label">Refresh</span></button>
+            <button class="btn btn-dark" id="export-btn" type="button"><span data-icon="download"></span><span class="btn-label">Export CSV</span></button>
+          </div>
+        </section>
+        <section class="stats" id="stats" aria-live="polite"></section>
+        <section class="toolbar">
+          <div class="seg seg-auto" id="f-status" role="tablist" aria-label="Status filter">
+            <span class="seg-thumb" aria-hidden="true"></span>
+            <button type="button" role="tab" data-status="">All</button>
+            <button type="button" role="tab" data-status="locked">Locked</button>
+            <button type="button" role="tab" data-status="paid">Paid</button>
+          </div>
+          <label class="search">
+            <span class="search-ic" data-icon="search"></span>
+            <span class="sr-only">Search orders</span>
+            <input class="input" id="f-q" placeholder="Search ref, customer or system…" />
+          </label>
+        </section>
+        <section class="sheet sheet-flat" id="orders-host"><div class="skeleton sk-table"></div></section>
+        <p class="screen-foot" id="screen-foot">Demo orders live in memory and reset when the server restarts</p>
+      </main>
+    </div>
+  </div>
+  <script type="module" src="/assets/js/sales.js"></script>
+</body>
+</html>
