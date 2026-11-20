@@ -26,8 +26,11 @@ for (const f of files) execFileSync(process.execPath, ['--check', f], { stdio: '
 console.log(`syntax OK (${files.length} files)`);
 
 // 3. strict-CSP guard: no inline scripts / styles in HTML
-for (const f of walk(path.join(root, 'public')).filter((x) => x.endsWith('.html'))) {
-  const html = fs.readFileSync(f, 'utf8');
-  if (/<script(?![^>]*\bsrc=)[^>]*>/i.test(html) || /\sstyle=|\son[a-z]+=/i.test(html) || /<style[\s>]/i.test(html)) throw new Error(`${path.relative(root, f)} contains inline script/style (blocked by CSP)`);
+for (const dir of ['public', 'views']) {
+  if (!fs.existsSync(path.join(root, dir))) continue;
+  for (const f of walk(path.join(root, dir)).filter((x) => x.endsWith('.html'))) {
+    const html = fs.readFileSync(f, 'utf8');
+    if (/<script(?![^>]*\bsrc=)[^>]*>/i.test(html) || /\sstyle=|\son[a-z]+=/i.test(html) || /<style[\s>]/i.test(html)) throw new Error(`${path.relative(root, f)} contains inline script/style (blocked by CSP)`);
+  }
 }
 console.log('CSP guard OK');

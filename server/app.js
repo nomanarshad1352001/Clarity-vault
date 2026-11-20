@@ -16,6 +16,9 @@ const payment = require('./routes/payment');
 const staff = require('./routes/staff');
 
 const PUBLIC = path.join(__dirname, '..', 'public');
+// Staff pages live outside /public so a static host (e.g. Vercel's CDN) cannot
+// serve them without going through the role checks below.
+const VIEWS = path.join(__dirname, '..', 'views');
 
 function createApp() {
   const app = express();
@@ -54,8 +57,8 @@ function createApp() {
   app.use('/api', notFoundApi);
 
   // Role-protected pages (the APIs behind them are independently protected).
-  app.get(['/sales', '/sales.html'], requireRolePage('sales', 'admin'), (req, res) => res.sendFile(path.join(PUBLIC, 'sales.html')));
-  app.get(['/admin', '/admin.html'], requireRolePage('admin'), (req, res) => res.sendFile(path.join(PUBLIC, 'admin.html')));
+  app.get(['/sales', '/sales.html'], requireRolePage('sales', 'admin'), (req, res) => res.sendFile(path.join(VIEWS, 'sales.html')));
+  app.get(['/admin', '/admin.html'], requireRolePage('admin'), (req, res) => res.sendFile(path.join(VIEWS, 'admin.html')));
 
   app.use(express.static(PUBLIC, { extensions: ['html'], maxAge: config.isProd ? '1h' : 0 }));
   app.use((req, res) => res.status(404).sendFile(path.join(PUBLIC, '404.html')));

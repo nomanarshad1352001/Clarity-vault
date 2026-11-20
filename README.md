@@ -19,7 +19,9 @@ Homeowners price a new AC online with no sales visit:
 
 > **Note on `app/` and `next`:** the sandbox this was built in runs `next typegen` as a validation step, which needs an
 > `app/` folder and the `next` package. They are an inert shim: **nothing in this project uses Next.js**.
-> In your own repo you can delete `app/`, uninstall `next`, and drop that check.
+> In your own repo you can delete `app/`, uninstall `next`, and drop that check. Until then, `vercel.json` pins the
+> framework preset to `express` so Vercel does not try to run a Next.js build (which would fail with
+> `NEXT_NO_ROUTES_MANIFEST`).
 
 ## Quick start
 
@@ -55,7 +57,8 @@ server/
     logger.js         JSON logs with PII redaction
   adapters/           payments · financing · crm · notifications · address (+ index.js registry)
   middleware/         security (helmet/CSP) · csrf · rateLimits · auth (requireRole) · errorHandler
-public/               static frontend: index, login, quote (wizard), success, verify, pay/mock, sales, admin
+public/               static frontend: index, login, quote (wizard), success, verify, pay/mock
+views/                role-gated staff HTML (sales, admin) - kept out of public/ so CDNs cannot bypass the guard
 config/               catalog.json · pricing-rules.json · demo-users.json
 tests/                node:test suites
 ```

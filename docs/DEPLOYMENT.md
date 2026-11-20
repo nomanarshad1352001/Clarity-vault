@@ -43,7 +43,25 @@ The image runs as a non-root user and has a `HEALTHCHECK` on `/health`.
 3. Settings → Networking → *Generate Domain* or add a custom domain (`CNAME` to the target shown). TLS is automatic.
 4. Settings → Deploy → healthcheck path `/health`; replicas **1**.
 
-## 5. HTTPS & domain notes
+## 5. Vercel (demo/mock use only)
+
+`vercel.json` pins the framework preset to **Express** and points the build at `npm run build`.
+The root `server.js` exports the Express app; `public/` is served by Vercel's CDN, while the
+role-gated staff pages live in `views/` so they still pass through the auth guard.
+
+1. Import the repo at [vercel.com/new](https://vercel.com/new) - do **not** leave the preset on Next.js
+   (the `next`/`app/` shim is only for sandbox typegen; a Next build never produces `.next/routes-manifest.json`).
+2. Build command: `npm run build`; Install command: `npm install` (leave defaults, they match `vercel.json`).
+3. Add the environment variables from section 1. `APP_URL` must be the final Vercel URL.
+4. Deploy, then check `/health` and a full quote → lock → pay flow.
+
+> **Important:** Vercel runs the Express app as a serverless function. Orders, sessions, the queue and the
+> mock card-form state are in memory and are **not shared between invocations/instances**; config writes may
+> fail on the read-only filesystem. Fine for a UI/mock demo, but **do not take real payments on Vercel**
+> until those modules are backed by a database/Redis (see README *Replacing modules*). Use Render/Railway
+> (single long-running instance) for anything real.
+
+## 6. HTTPS & domain notes
 
 - Terminate TLS at the platform (Render/Railway do this); the app sees plain HTTP behind the proxy, which is why `TRUST_PROXY=1` matters.
 - With `FORCE_HTTPS=true` the app sends HSTS (1 year, includeSubDomains) and CSP `upgrade-insecure-requests`. Only enable once HTTPS works on the final domain, because browsers cache HSTS.
@@ -51,7 +69,7 @@ The image runs as a non-root user and has a `HEALTHCHECK` on `/health`.
 - Stripe webhook URL must be the public HTTPS URL: `https://your-domain/api/webhooks/stripe`.
 - Redirect `www` ↔ apex at your DNS/CDN provider. If you put Cloudflare in front, keep proxying on and set `TRUST_PROXY=2`.
 
-## 6. Go-live checklist
+## 7. Go-live checklist
 
 **Data**
 - [ ] Replace `config/catalog.json` with real products, prices, warranties, images (put real images in `public/img/`).
